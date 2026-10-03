@@ -1,0 +1,22 @@
+# Downloaded corpora, caches and generated datasets are large and reproducible:
+# never commit them.
+data/raw/
+data/cache/
+data/processed/
+data/audit/
+
+# Keep the directory layout in git.
+!data/**/.gitkeep
+
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.log

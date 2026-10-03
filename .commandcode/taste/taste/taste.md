@@ -1,0 +1,16 @@
+# Taste
+- Prefers the agent to resume unfinished work by locating prior session files (e.g. an opencode session DB), extracting the goal and context, and continuing to completion rather than restarting or asking the user to re-explain. Confidence: 0.7
+- Prefers terse, minimal steering (e.g. "continue") and expects the agent to keep working autonomously, reporting only when done or blocked. Confidence: 0.7
+- Prefers project status documented in a standalone markdown file at the project root (e.g. PROGRESS.md), covering what has been done and by whom (agent vs. prior tooling), plus current code status and next steps. Confidence: 0.6
+- Prefers complete files in the output (each with its path as a heading before the code block) rather than diffs. Confidence: 0.9
+- Prefers phased delivery with an explicit stop for review at the end of each phase before continuing to the next. Confidence: 0.9
+- Prefers exact shell commands to run and verify each deliverable. Confidence: 0.8
+- Prefers following the codebase's existing conventions: type hints, docstrings, thresholds/constants in config.py, perspective conversion only in engine/eval_utils.py, pydantic schemas. Confidence: 0.8
+- Prefers not inventing library APIs; use documented functions (python-chess, zstandard, pandas, pyarrow) and flag anything uncertain. Confidence: 0.8
+- Prefers leaving chess.Board objects unmutated (operate on copies rather than push/pop in place). Confidence: 0.7
+- Prefers keeping ruff check and ruff format --check clean and all tests passing, reporting the test count at the end of each phase. Confidence: 0.9
+- Prefers one-line inline assumptions and continuing rather than stopping, reserving questions for genuine blockers. Confidence: 0.8
+- Prefers long-running work delivered as standalone, resumable scripts with a printed plan and time estimate. Confidence: 0.8
+- Prefers streaming, memory-efficient file I/O (never decompress whole files to disk or load them fully into memory). Confidence: 0.7
+- Prefers verifying external formats/URLs against the actual source before coding, marking unverified details with `# ASSUMPTION:` comments, and reporting what was verified vs. assumed and what could not be verified. Confidence: 0.8
+- Prefers no hardcoded machine-specific paths (e.g. /tmp); resolve paths via env vars and CLI flags with a documented lookup order. Confidence: 0.8

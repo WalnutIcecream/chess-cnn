@@ -1,0 +1,69 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "moveexp"
+version = "0.1.0"
+description = "Explain the intent, tactical importance and positional effect of a chess move."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "chess-ai" }]
+keywords = ["chess", "stockfish", "explainability", "weak-supervision", "pytorch"]
+classifiers = [
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Games/Entertainment :: Board Games",
+    "Intended Audience :: Science/Research",
+]
+
+# Core runtime dependencies. PyTorch is deliberately NOT here: Stages 1-3 (analysis,
+# labelling, data) must install without a deep-learning stack. See [project.optional-dependencies].
+dependencies = [
+    "python-chess>=1.10",   # board representation, attack maps, PGN parsing, UCI engine control
+    "pydantic>=2.5",        # MoveReport / GameReport schemas and validation
+    "typer>=0.12",          # CLI
+    "numpy>=1.26",          # numeric helpers, multi-hot vectors
+    "pandas>=2.0",          # dataset statistics (Stage 3)
+    "pyarrow>=14.0",        # Parquet shards (Stage 3)
+    "tqdm>=4.66",           # progress bars for long jobs
+    "zstandard>=0.22",      # streaming .zst reading (Stage 3)
+]
+
+[project.optional-dependencies]
+# Stage 4 only.
+torch = ["torch>=2.1", "tensorboard>=2.13"]
+# Test + lint tooling.
+dev = ["pytest>=8.0", "pytest-cov>=4.1", "ruff>=0.5"]
+all = ["moveexp[torch,dev]"]
+
+[project.scripts]
+moveexp = "moveexp.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-ra"
+markers = [
+    "engine: requires a local Stockfish binary; auto-skipped when none is found",
+    "slow: long-running test, deselect with -m 'not slow'",
+]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests", "scripts", "eval"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# typer/click declare CLI options as calls in argument defaults; that is the documented idiom.
+"src/moveexp/cli.py" = ["B008"]
