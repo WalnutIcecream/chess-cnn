@@ -20,3 +20,7 @@
 - Expects the agent to propose a scope/plan and wait for explicit approval before kicking off a large autonomous run ("as told, dont do anything yet"). Confidence: 0.6
 - Wants to drive long unattended overnight work with Command Code's `/loop` feature (self-paced loop that stops once the task is done), prefers the standing task written to `.commandcode/loop.md` so a bare `/loop` picks it up, and asks for concrete usage instructions. Confidence: 0.6
 - When asking for an explanation, wants a full end-to-end walkthrough — what the project does, how it works (layer-by-layer pipeline), and exactly how to demo it with commands — rather than a narrow answer. Confidence: 0.5
+- Prefers a plain, technically-dense writing register — "senior open source contributor" tone, no marketing, no flowery AI language — for written deliverables, which should read like a proper research paper. Confidence: 0.85
+- When reproducing or adapting an existing document/template, expects the exact format, structure and section numbering to be preserved — "do not stray from the format given". Confidence: 0.8
+- Wants reports to justify the thought process and the decision behind every action, and to state limitations, problems encountered and the fixes/clever workarounds found, so the document reads intuitively. Confidence: 0.8
+- Prefers academic/report deliverables produced as .docx (generated reproducibly rather than hand-edited). Confidence: 0.6

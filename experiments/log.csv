@@ -18,3 +18,4 @@ date,milestone,action,command,result,notes
 2026-10-05,M5,intent head,added MoveNet intent head + train_model intent rows,"intent micro F1 0.271/0.285; quality macro F1 now 0.152 vs 0.088 baseline","multi-task intent head regularises quality; retrained both variants"
 2026-10-05,DEMO,gallery theme highlighting,scripts/make_gallery.py,"78/78 boards shade detected theme squares","blue theme squares + yellow move + arrow"
 2026-10-05,DEMO,visual landing page,scripts/make_site.py,"demo/index.html; concept diagram + 3 result charts + 6 highlights","self-contained; rendered headless via Chrome to verify"
+2026-10-05,DOC,PBL-2 report (docx),scripts/make_pbl_report.py,"PBL_Report_Chess_Move_Intent.docx; 11 sections, 7 tables, 4 figures","original report skeleton reproduced; contents list is a Word field (F9 to populate)"
