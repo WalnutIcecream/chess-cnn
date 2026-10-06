@@ -229,3 +229,115 @@ multi-attacker exchange cases.
 4. **M8 — model:** `encode.py`, `dataset.py`, `network.py`, `train.py`, `evaluate.py` (+ CPU debug config).
 5. **M9 — explanation:** `explain/` prompt template + verifier, `explain` CLI.
 6. **M10 (optional) — Leela probing.**
+
+---
+
+## 11. Prototype build — Windows, 2026-10-05
+
+The symbolic layer was developed on NixOS; this session stood it up on Windows and added
+the demo-facing pieces. Environment: Python 3.13 venv, Stockfish 19 (official
+`sf_19` `windows-x86-64-universal` build in `tools/`, git-ignored), `STOCKFISH_PATH` set
+at user scope. Full suite: **298 passed**, `ruff check` / `ruff format --check` clean.
+
+**Added**
+
+- **Explanation layer** (`src/moveexp/explain/`): `facts.py` derives checkable clauses from
+  a `MoveReport`; `render.py` orders them into prose; `verify.py` re-derives every claim
+  from the same report and drops anything the report does not support; `api.py` wraps the
+  pipeline. No new inference — every sentence is traceable to a report field.
+- **`moveexp explain` CLI**: `--fen/--move` for one move, `--game` for a whole game,
+  `--json` for the structured report + claims, `--out` to write a file.
+- **Demo corpus + scripts**: `demo/games/opera.pgn`, `demo/games/immortal.pgn`;
+  `scripts/build_demo.py` (games -> `demo/out/*.md` + `*.json`);
+  `scripts/make_gallery.py` (JSON -> self-contained `demo/gallery.html`, inline board SVGs,
+  quality badges, grouped claims, per-move evidence tables).
+- **`DEMO.md`** runbook and **`experiments/log.csv`**.
+
+**Verified numbers from this build**
+
+| Artefact | Result |
+| --- | --- |
+| Test suite | 298 passed (12 explain + 3 gallery tests are new) |
+| Demo games | Opera Game 33 plies, Immortal Game 45 plies |
+| Gallery | 78 cards, 2638 KiB, 78/78 moves fully verified |
+
+**Windows fixes made**
+
+- Console streams reconfigured to UTF-8 in the CLI (em dashes were mangled under cp1252).
+- `format_game_explanation` move-numbering bug (used a report attribute on an explanation).
+- Positional feature deltas suppressed on a decided (forcing-win) move — they are artifacts
+  of the terminal board, not intent signal.
+
+**Still open (unchanged):** M5 data acquisition, M6 splits, M7 bulk labelling, M8 model.
+The neural model (Stage 4) remains the main research contribution and is not started.
+
+---
+
+## 12. M5 stretch — tiny neural baseline (2026-10-05)
+
+A first CPU-only neural baseline was added on top of the rule labels, to test whether the
+labels are learnable from the board alone. New code: `src/moveexp/model/` (encoder,
+dataset + game-level split, tiny CNN with quality, theme and intent heads),
+`scripts/generate_games.py` (self-play corpus, **no downloads**) and
+`scripts/train_model.py` (train + evaluate + majority baseline).
+
+**Data.** 40 Stockfish self-play games (depth 6, sampling the top 3 moves), 1971 moves,
+labelled by the existing pipeline at depth 8 and split by game id (1571/200/200).
+
+**Results** (`experiments/model_vs_rules.csv`, `with_move` variant, weighted losses):
+
+| head | metric | model | majority baseline |
+| --- | --- | --- | --- |
+| quality | accuracy | 0.200 | 0.445 |
+| quality | macro F1 | 0.152 | 0.088 |
+| theme | micro F1 | 0.307 | 0.246 |
+| theme | macro F1 | 0.220 | 0.022 |
+| intent | micro F1 | 0.271 | 0.000 |
+| intent | macro F1 | 0.203 | 0.000 |
+
+**Reading.** *Tactical themes are the strongest signal* — the CNN beats a trivial prior
+baseline by ~10x on macro F1 and ~25% on micro F1. *Intents* are also learned (0.27 micro
+/ 0.20 macro F1), but note the baseline there degenerates to all-off (no intent is common
+enough to have majority prevalence), so that bar is weak. *Move quality* stays below the
+majority-class baseline on accuracy (0.20 vs 0.445), yet its macro F1 now **beats** the
+baseline (0.152 vs 0.088) — the extra intent head acts as a regulariser. The architecture
+is not the limit: a 96-sample overfit run reaches 0.96 quality accuracy, so the quality
+result is a data/label-difficulty finding and belongs in the paper's error analysis.
+Encoding the played move barely changed the ranking (theme macro F1 0.220 with vs 0.238
+without; intent 0.203 vs 0.210).
+
+**Caveats (statement of scope).** The baseline is a majority/prior predictor, **not "the
+rules"** — the rules generated the labels, so this measures *learnability*, not
+correctness. No independent ground truth (puzzle tags / human labels) is used yet, and the
+labels are known to be noisy. Treat these numbers as a first signal, not a verdict.
+
+**Latent bug found (not fixed here).** `pipeline._game_id` returns the `Site` header
+whenever it is non-empty, and python-chess defaults `Site` to `"?"`, so PGNs without a
+real Site all collapse to a single game id (this initially merged all 40 self-play games
+and would have silently destroyed the game-level split). Worked around in
+`generate_games.py` by writing a unique Site per game; Lichess games are unaffected
+because they carry a real Site. A guard in `_game_id` is a separate, later change.
+
+---
+
+## 13. Demo presence — visual landing page (2026-10-05)
+
+The demo now has a front door: `demo/index.html`, built by `scripts/make_site.py`. It is a
+single self-contained page with three sections, so a supervisor can check the work in a
+room instead of reading a transcript:
+
+- **Concept** — an inline-SVG pipeline diagram (engine -> symbolic rules -> weak labels ->
+  CNN -> verified explanation) and one-line definitions of quality / theme / intent.
+- **Results** — the numbers from `experiments/model_vs_rules.csv` drawn as bar charts
+  (green = model, grey = majority baseline) per head, with the same values in a table.
+- **Highlights** — the most striking moves across the demo games, with the detected theme
+  squares shaded blue and the played move shaded yellow, linking to the full gallery.
+
+`demo/gallery.html` was extended to colour the detected **theme squares** on every board,
+not just the played move, so the tactics the detectors found are visible rather than
+asserted.
+
+Both pages are offline and self-contained (inline CSS/SVG, no CDN, no network at view
+time). Verified by rendering headlessly with Chrome: the landing page shows the 5-box
+pipeline, 3 charts and 6 highlight boards; the gallery shows 78 cards with blue theme
+shading. New tests: `tests/test_site.py`, plus theme-square cases in `tests/test_gallery.py`.

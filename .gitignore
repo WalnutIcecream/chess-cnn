@@ -8,6 +8,9 @@ data/audit/
 # Keep the directory layout in git.
 !data/**/.gitkeep
 
+# Local engine binaries (Stockfish is GPL-3.0 and never vendored).
+tools/
+
 __pycache__/
 *.py[cod]
 *.egg-info/

@@ -7,8 +7,10 @@ it belonged to and what the player's intent plausibly was. The output is a
 
 Milestone status: **M2 done** (the full symbolic layer — SEE, tactical/material/
 king-safety/structure/activity theme detectors, positional features, intent tags, the
-`MoveReport` pipeline, and the `analyze-pgn` / `batch` CLI). The dataset builders
-(Stage 3) and the neural/LLM stages are not implemented yet — see [Roadmap](#roadmap).
+`MoveReport` pipeline, and the `analyze-pgn` / `batch` CLI), plus the **explanation layer**
+(`src/moveexp/explain/`, the `explain` CLI) and a self-contained **demo gallery**
+(`demo/gallery.html`). The dataset builders (Stage 3) and the neural model (Stage 4) are
+not implemented yet — see [Roadmap](#roadmap).
 
 ---
 
@@ -29,6 +31,11 @@ moveexp --engine-path "$STOCKFISH_PATH" analyze-move \
     --move "Qxf7#" --depth 18 --multipv 5
 
 moveexp vocab      # print the frozen label vocabularies
+
+# verified natural-language explanation of a move (or a whole game)
+moveexp --engine-path "$STOCKFISH_PATH" explain \
+    --fen "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5Q2/PPPP1PPP/RNB1K1NR w KQkq - 4 4" \
+    --move "Qxf7#" --depth 14
 ```
 
 Global options (`--engine-path`, `--threads`, `--hash`) come **before** the subcommand;
@@ -67,9 +74,14 @@ src/moveexp/
       activity.py      outpost/rook files/rook seventh/bishops/development/centre
       intent.py        IntentTag + static intent rules + null-move threat probes
   pipeline.py          assemble a full MoveReport (and a GameReport per game)
-  cli.py               analyze-move / analyze-pgn / batch / vocab
-tests/                 276 tests; engine tests are marked `engine`
+  explain/             verified explanations: facts -> render -> verify (+ explain API)
+  cli.py               analyze-move / analyze-pgn / batch / explain / vocab
+tests/                 316 tests; engine tests are marked `engine`
 eval/puzzle_benchmark.py   detector precision/recall vs Lichess puzzle tags
+scripts/build_demo.py      explain the demo games -> demo/out/*.md + *.json
+scripts/make_gallery.py    render the demo JSON -> self-contained demo/gallery.html
+scripts/make_site.py       render demo/index.html (concept diagram + results charts + highlights)
+demo/                   games/, out/ (generated), index.html + gallery.html (the demo)
 data/{raw,cache,processed,audit}/   git-ignored working directories (.gitkeep kept)
 ```
 
@@ -212,7 +224,7 @@ rules and takes `sacrifice_confirmed`, which the bulk labeller passes as `False`
 | M4 | sampling, dedupe, oversampling and game-level train/val/test splits |
 | M5 | resumable two-tier bulk labelling, label audit and dataset statistics |
 | M6 | neural model (multi-label themes + intent, quality head) |
-| M7 | LLM explanation layer + verifier, checked against the symbolic reports |
+| M7 | LLM/constrained explanation layer + verifier, checked against the symbolic reports (rule-based renderer + verifier done: `src/moveexp/explain/`) |
 
 ## Licence / attribution
 

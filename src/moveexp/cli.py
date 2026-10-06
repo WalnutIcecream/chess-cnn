@@ -6,12 +6,14 @@ options (depth, nodes, multipv, cache) come after it::
     moveexp --engine-path /usr/games/stockfish analyze-move --fen "<FEN>" --move e2e4
 
 Commands: ``analyze-move`` (one position), ``analyze-pgn`` (one game), ``batch`` (many games
-to Parquet), ``vocab`` (the frozen label spaces). ``predict`` and ``explain`` arrive with
-Stages 4 and 5.
+to Parquet), ``explain`` (verified natural-language explanation of a move or a game), and
+``vocab`` (the frozen label spaces). ``predict`` arrives with Stage 4.
 """
 
+import contextlib
 import io
 import json
+import sys
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -29,6 +31,12 @@ from .config import (
     DEFAULT_THREADS,
     QUALITY_LABELS,
     THEME_VOCAB,
+)
+from .explain import (
+    explain_game,
+    explain_move,
+    format_game_explanation,
+    format_move_explanation,
 )
 from .pipeline import analyse_game, analyse_move
 
@@ -62,6 +70,20 @@ class GlobalOptions:
         return DEFAULT_CACHE_DB
 
 
+def _force_utf8() -> None:
+    """Emit UTF-8 on the console streams regardless of the Windows locale.
+
+    Explanations contain typographic characters (em dashes); on a cp1252 console those
+    would be mangled, so the streams are reconfigured where the platform allows it.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        with contextlib.suppress(ValueError, OSError):
+            reconfigure(encoding="utf-8")
+
+
 @app.callback()
 def main(
     ctx: typer.Context,
@@ -81,6 +103,7 @@ def main(
     ),
 ) -> None:
     """Global options; must appear before the sub-command name."""
+    _force_utf8()
     ctx.obj = GlobalOptions(
         engine_path=engine_path, threads=threads, hash_mb=hash_mb, data_dir=data_dir
     )
@@ -287,6 +310,94 @@ def batch(
     out.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(rows).to_parquet(out, engine="pyarrow", index=False)
     typer.echo(f"wrote {len(rows)} rows to {out}")
+
+
+@app.command("explain")
+def explain_command(
+    ctx: typer.Context,
+    fen: str | None = typer.Option(None, "--fen", help="FEN of the position before the move."),
+    move: str | None = typer.Option(None, "--move", help="Move to explain, UCI (e2e4) or SAN."),
+    game: Path | None = typer.Option(
+        None, "--game", help="PGN file; explain every move of the first game."
+    ),
+    depth: int | None = typer.Option(
+        None, "--depth", min=1, help=f"Search depth (default {DEFAULT_DEPTH})."
+    ),
+    nodes: int | None = typer.Option(
+        None, "--nodes", min=1, help="Node budget; mutually exclusive with --depth."
+    ),
+    multipv: int = typer.Option(
+        DEFAULT_MULTIPV, "--multipv", min=1, help=f"PV lines to return (default {DEFAULT_MULTIPV})."
+    ),
+    no_cache: bool = typer.Option(False, "--no-cache", help="Bypass the SQLite analysis cache."),
+    cache_db: Path | None = typer.Option(None, "--cache-db", help="SQLite cache file."),
+    null_move_probes: bool = typer.Option(
+        False, "--null-move-probes", help="Run the optional engine threat probes (extra cost)."
+    ),
+    json_out: bool = typer.Option(
+        False, "--json", help="Print structured JSON (report + explanation) instead of text."
+    ),
+    out: Path | None = typer.Option(None, "--out", help="Write the output to this file."),
+) -> None:
+    """Explain a move (``--fen`` + ``--move``) or a whole game (``--game``).
+
+    Every sentence is verified against the underlying MoveReport; anything the report
+    does not support is dropped rather than printed. Examples::
+
+        moveexp explain --fen "<FEN>" --move Qxf7#
+        moveexp explain --game demo/games/opera.pgn --out demo/out/opera.md
+    """
+    options: GlobalOptions = ctx.obj or GlobalOptions()
+    common: dict[str, Any] = {
+        "engine_path": options.engine_path,
+        "threads": options.threads,
+        "hash_mb": options.hash_mb,
+        "limit": _limit(depth, nodes),
+        "multipv": multipv,
+        "cache_db": cache_db or options.cache_db,
+        "use_cache": not no_cache,
+        "null_move_probes": null_move_probes,
+    }
+
+    if game is not None:
+        if fen is not None or move is not None:
+            raise typer.BadParameter("use either --game or --fen/--move, not both")
+        with game.open() as handle:
+            parsed_game = chess.pgn.read_game(handle)
+        if parsed_game is None:
+            raise typer.BadParameter(f"no game found in {game}")
+        game_result = explain_game(parsed_game, **common)
+        text = format_game_explanation(game_result)
+        payload = json.dumps(
+            {
+                "game": game_result.game.model_dump(mode="json"),
+                "explanations": [e.model_dump(mode="json") for e in game_result.explanations],
+            },
+            indent=2,
+        )
+    elif fen is not None and move is not None:
+        board = _parse_fen(fen)
+        parsed_move = _resolve_move(board, move)
+        single = explain_move(board, parsed_move, **common)
+        text = format_move_explanation(single)
+        payload = json.dumps(
+            {
+                "report": single.report.model_dump(mode="json"),
+                "explanation": single.explanation.model_dump(mode="json"),
+            },
+            indent=2,
+        )
+    else:
+        raise typer.BadParameter("provide --game, or both --fen and --move")
+
+    if out is not None:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(payload + "\n", encoding="utf-8")
+        typer.echo(f"wrote {out}")
+    elif json_out:
+        typer.echo(payload)
+    else:
+        typer.echo(text)
 
 
 @app.command("vocab")

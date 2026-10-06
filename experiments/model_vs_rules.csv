@@ -1,0 +1,13 @@
+variant,head,metric,model,majority_baseline
+with_move,quality,accuracy,0.2,0.445
+with_move,quality,macro_f1,0.15184205573221593,0.087988136431043
+with_move,theme,micro_f1,0.30746489283074646,0.2459016393442623
+with_move,theme,macro_f1,0.2199450717855524,0.022388059701492536
+with_move,intent,micro_f1,0.2709677419354839,0.0
+with_move,intent,macro_f1,0.20326835475899407,0.0
+without_move,quality,accuracy,0.18,0.445
+without_move,quality,macro_f1,0.09381134873193864,0.087988136431043
+without_move,theme,micro_f1,0.3408845738942826,0.2459016393442623
+without_move,theme,macro_f1,0.23757716179716384,0.022388059701492536
+without_move,intent,micro_f1,0.2853907134767837,0.0
+without_move,intent,macro_f1,0.21003223072683555,0.0
