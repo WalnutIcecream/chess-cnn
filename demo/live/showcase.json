@@ -1,0 +1,368 @@
+{
+  "description": "Paul Morphy vs Duke of Brunswick and Count Isouard, ply 18 (Nxb5)",
+  "report": {
+    "ply": 0,
+    "fen_before": "rn2kb1r/p3qppp/2p2n2/1p2p1B1/2B1P3/1QN5/PPP2PPP/R3K2R w KQkq - 0 10",
+    "move_uci": "c3b5",
+    "move_san": "Nxb5",
+    "quality": {
+      "label": "great",
+      "eval_before_cp": 450.0,
+      "eval_after_cp": 450.0,
+      "win_prob_before": 0.839826268607404,
+      "win_prob_after": 0.839826268607404,
+      "loss_cp": 0.0,
+      "loss_wp": 0.0,
+      "best_move": "c3b5",
+      "best_move_san": "Nxb5",
+      "best_move_cp": 450.0,
+      "best_move_wp": 0.839826268607404,
+      "rank": 1,
+      "n_lines": 3,
+      "played_in_multipv": true,
+      "is_only_move": true,
+      "gap_to_second_wp": 0.19328709659253762,
+      "sharpness": 0.31315652457654075,
+      "is_forcing": true,
+      "is_critical": true
+    },
+    "themes": [
+      {
+        "theme": "x_ray",
+        "squares": [
+          "g5",
+          "f6",
+          "e7"
+        ],
+        "pieces": [
+          "B@g5"
+        ],
+        "confidence": 0.6,
+        "evidence": "B@g5 sees through n@f6 to the valuable q@e7 behind it"
+      },
+      {
+        "theme": "capture",
+        "squares": [
+          "c3",
+          "b5"
+        ],
+        "pieces": [
+          "N@b5"
+        ],
+        "confidence": 1.0,
+        "evidence": "takes the p@b5"
+      },
+      {
+        "theme": "sacrifice",
+        "squares": [
+          "c3",
+          "b5"
+        ],
+        "pieces": [
+          "N@b5"
+        ],
+        "confidence": 0.8,
+        "evidence": "gives up the N@c3 for the p@b5"
+      },
+      {
+        "theme": "weakens_opponent_king",
+        "squares": [
+          "e8"
+        ],
+        "pieces": [
+          "k@e8"
+        ],
+        "confidence": 0.7,
+        "evidence": "opponent king safety drops from -2.00 to -3.00"
+      },
+      {
+        "theme": "bishop_pair",
+        "squares": [
+          "c4",
+          "g5"
+        ],
+        "pieces": [
+          "B@c4",
+          "B@g5"
+        ],
+        "confidence": 1.0,
+        "evidence": "the mover owns both bishops"
+      }
+    ],
+    "positional_delta": {
+      "material": 100.0,
+      "mobility": 24.0,
+      "king_safety": 0.0,
+      "pawn_structure": 0.0,
+      "space": 0.0,
+      "activity": -5.0
+    },
+    "intent": [
+      {
+        "tag": "attacks_king",
+        "evidence": "pressure on the enemy king rises",
+        "moves": [],
+        "confidence": 0.7
+      }
+    ],
+    "pv": [
+      "c3b5",
+      "c6b5",
+      "c4b5",
+      "b8d7",
+      "e1c1",
+      "a8d8",
+      "d1d3",
+      "a7a6",
+      "b5a4",
+      "e7e6",
+      "h1d1",
+      "e6b3",
+      "a2b3",
+      "f8c5"
+    ],
+    "fen_after": "rn2kb1r/p3qppp/2p2n2/1N2p1B1/2B1P3/1Q6/PPP2PPP/R3K2R b KQkq - 0 10",
+    "meta": {
+      "engine_path": "C:\\Users\\Walnut Icecream\\Documents\\chess-cnn\\tools\\stockfish\\stockfish\\stockfish-windows-x86-64-universal.exe",
+      "engine_id": "Stockfish 19",
+      "limit_signature": "d14",
+      "depth": 14,
+      "nodes": 131195,
+      "multipv": 3,
+      "tier": 1,
+      "source": "engine",
+      "label_source": "engine",
+      "puzzle_tags": [],
+      "cache_hit": false,
+      "dataset_version": "v1"
+    },
+    "provenance": {
+      "engine_name": "Stockfish 19",
+      "engine_author": "the Stockfish developers (see AUTHORS file)",
+      "limit_type": "depth",
+      "limit_value": 14.0,
+      "multipv": 3,
+      "threads": 1,
+      "hash_mb": 256,
+      "moveexp_version": "0.1.0"
+    }
+  },
+  "explanation": {
+    "ply": 0,
+    "move_san": "Nxb5",
+    "move_uci": "c3b5",
+    "headline": "Nxb5 \u2014 a great move.",
+    "sentences": [
+      "The evaluation remains +4.50 for the mover.",
+      "It was the only move that keeps the position.",
+      "The move is forcing: a check or a forced mate.",
+      "The position was critical: small differences in the evaluation mattered.",
+      "X ray: B@g5 sees through n@f6 to the valuable q@e7 behind it.",
+      "Capture: takes the p@b5.",
+      "Sacrifice: gives up the N@c3 for the p@b5.",
+      "Weakens opponent king: opponent king safety drops from -2.00 to -3.00.",
+      "Bishop pair: the mover owns both bishops.",
+      "Material: the mover gained 1.00 pawns.",
+      "Mobility: improved by 24.0.",
+      "Activity: worsened by 5.0.",
+      "Intent \u2014 attacks king: pressure on the enemy king rises."
+    ],
+    "claims": [
+      {
+        "kind": "headline",
+        "text": "Nxb5 \u2014 a great move.",
+        "evidence": "quality.label=great",
+        "source": {
+          "move_san": "Nxb5",
+          "label": "great"
+        },
+        "confidence": 1.0,
+        "verified": true
+      },
+      {
+        "kind": "evaluation",
+        "text": "The evaluation remains +4.50 for the mover.",
+        "evidence": "eval_before_cp=450.0, eval_after_cp=450.0, loss_cp=0.0, loss_wp=0.000",
+        "source": {
+          "label": "great",
+          "eval_after_cp": 450.0,
+          "loss_cp": 0.0,
+          "loss_wp": 0.0
+        },
+        "confidence": 1.0,
+        "verified": true
+      },
+      {
+        "kind": "criticality",
+        "text": "It was the only move that keeps the position.",
+        "evidence": "is_only_move=True, gap_to_second_wp=0.193",
+        "source": {
+          "flag": "is_only_move",
+          "value": true
+        },
+        "confidence": 1.0,
+        "verified": true
+      },
+      {
+        "kind": "criticality",
+        "text": "The move is forcing: a check or a forced mate.",
+        "evidence": "is_forcing=True",
+        "source": {
+          "flag": "is_forcing",
+          "value": true
+        },
+        "confidence": 1.0,
+        "verified": true
+      },
+      {
+        "kind": "criticality",
+        "text": "The position was critical: small differences in the evaluation mattered.",
+        "evidence": "is_critical=True, sharpness=0.313",
+        "source": {
+          "flag": "is_critical",
+          "value": true
+        },
+        "confidence": 1.0,
+        "verified": true
+      },
+      {
+        "kind": "theme",
+        "text": "X ray: B@g5 sees through n@f6 to the valuable q@e7 behind it.",
+        "evidence": "B@g5 sees through n@f6 to the valuable q@e7 behind it",
+        "source": {
+          "theme": "x_ray",
+          "squares": [
+            "g5",
+            "f6",
+            "e7"
+          ],
+          "pieces": [
+            "B@g5"
+          ],
+          "confidence": 0.6
+        },
+        "confidence": 1.0,
+        "verified": true
+      },
+      {
+        "kind": "theme",
+        "text": "Capture: takes the p@b5.",
+        "evidence": "takes the p@b5",
+        "source": {
+          "theme": "capture",
+          "squares": [
+            "c3",
+            "b5"
+          ],
+          "pieces": [
+            "N@b5"
+          ],
+          "confidence": 1.0
+        },
+        "confidence": 1.0,
+        "verified": true
+      },
+      {
+        "kind": "theme",
+        "text": "Sacrifice: gives up the N@c3 for the p@b5.",
+        "evidence": "gives up the N@c3 for the p@b5",
+        "source": {
+          "theme": "sacrifice",
+          "squares": [
+            "c3",
+            "b5"
+          ],
+          "pieces": [
+            "N@b5"
+          ],
+          "confidence": 0.8
+        },
+        "confidence": 1.0,
+        "verified": true
+      },
+      {
+        "kind": "theme",
+        "text": "Weakens opponent king: opponent king safety drops from -2.00 to -3.00.",
+        "evidence": "opponent king safety drops from -2.00 to -3.00",
+        "source": {
+          "theme": "weakens_opponent_king",
+          "squares": [
+            "e8"
+          ],
+          "pieces": [
+            "k@e8"
+          ],
+          "confidence": 0.7
+        },
+        "confidence": 1.0,
+        "verified": true
+      },
+      {
+        "kind": "theme",
+        "text": "Bishop pair: the mover owns both bishops.",
+        "evidence": "the mover owns both bishops",
+        "source": {
+          "theme": "bishop_pair",
+          "squares": [
+            "c4",
+            "g5"
+          ],
+          "pieces": [
+            "B@c4",
+            "B@g5"
+          ],
+          "confidence": 1.0
+        },
+        "confidence": 1.0,
+        "verified": true
+      },
+      {
+        "kind": "positional",
+        "text": "Material: the mover gained 1.00 pawns.",
+        "evidence": "positional_delta.material=100.0",
+        "source": {
+          "group": "material",
+          "value": 100.0
+        },
+        "confidence": 1.0,
+        "verified": true
+      },
+      {
+        "kind": "positional",
+        "text": "Mobility: improved by 24.0.",
+        "evidence": "positional_delta.mobility=24.0",
+        "source": {
+          "group": "mobility",
+          "value": 24.0
+        },
+        "confidence": 1.0,
+        "verified": true
+      },
+      {
+        "kind": "positional",
+        "text": "Activity: worsened by 5.0.",
+        "evidence": "positional_delta.activity=-5.0",
+        "source": {
+          "group": "activity",
+          "value": -5.0
+        },
+        "confidence": 1.0,
+        "verified": true
+      },
+      {
+        "kind": "intent",
+        "text": "Intent \u2014 attacks king: pressure on the enemy king rises.",
+        "evidence": "pressure on the enemy king rises",
+        "source": {
+          "tag": "attacks_king",
+          "moves": [],
+          "confidence": 0.7
+        },
+        "confidence": 1.0,
+        "verified": true
+      }
+    ],
+    "unverified": [],
+    "verified": true
+  }
+}

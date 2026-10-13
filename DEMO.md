@@ -1,96 +1,100 @@
 # DEMO — Verifiable Chess Move Explainer
 
-A three-layer prototype with a visual front door. A played move goes in; an engine-backed
-report comes out; an explanation layer writes prose in which **every sentence is verified
-against the report** (anything unsupported is dropped, not printed); and a small CNN shows
-the labels are learnable from the board alone.
+A three-layer prototype with a visual front door: engine measurement → symbolic rules →
+verified explanations, plus a small CNN trained on the rule labels and an image gallery of
+how it works and how it trained.
 
-**Start the demo here:** open `demo\index.html` — one page with the concept, the results
-charts, and the striking moves. It links to `demo\gallery.html` for the full move-by-move
-view.
+## Start here — one command, nothing to type
+
+**Double-click `run_demo.cmd`** in the repository root. That is the whole demo. It:
+
+1. runs the live pipeline on a real move and prints the verified explanation;
+2. writes `demo\live\showcase.json` (report + explanation + claims) and `demo\live\showcase.png`
+   (the board with the detected theme squares coloured);
+3. opens `demo\index.html` in your browser;
+4. pauses so you can read the output.
+
+If you prefer a terminal (or the `.cmd` will not run): one line, no arguments.
+
+```powershell
+.\.venv\Scripts\python.exe scripts\demo_run.py
+```
+
+Both forms find the engine automatically — no environment setup, no FENs, no flags.
+
+## The pages
+
+| Page | What it shows |
+| --- | --- |
+| `demo/index.html` | **Overview** — the pipeline concept diagram, the results charts (model vs baseline), and six striking moves with coloured boards. Links to the other two pages. |
+| `demo/process.html` | **How it works & how it trained** — a walkthrough of one real move (board → rule report → verified explanation → the model's own head outputs) and the training figures: loss curves, label distribution, per-theme/intent F1, confusion matrix. |
+| `demo/gallery.html` | **Move-by-move** — two famous games fully explained, every card with its board, quality badge, grouped claims and an evidence table. |
+
+All three are self-contained (inline SVG and base64 images, no network) and open offline.
 
 ## What's already here
 
 | Piece | Where |
 | --- | --- |
 | Symbolic layer (engine + 40 theme detectors + intent tags) | `src/moveexp/` |
-| Explanation layer (facts -> render -> verify) | `src/moveexp/explain/` |
+| Explanation layer (facts → render → verify) | `src/moveexp/explain/` |
 | Neural baseline (CNN: quality + theme + intent heads) | `src/moveexp/model/` |
 | CLI | `moveexp analyze-move` / `explain` / `analyze-pgn` / `batch` / `vocab` |
-| **Landing page (concept + results + highlights)** | `demo/index.html` |
-| **Full move-by-move gallery** | `demo/gallery.html` |
+| Live runner | `scripts/demo_run.py` |
+| Training figures | `experiments/figures/` |
 | Results numbers | `experiments/model_vs_rules.csv` |
-| Tests | `tests/` (310+ passing; run `pytest`) |
+| Tests | `tests/` — run `pytest` (334 passing) |
 
 ## One-time setup (already done on this machine)
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
-$env:STOCKFISH_PATH = "C:\Users\Walnut Icecream\Documents\chess-cnn\tools\stockfish\stockfish\stockfish-windows-x86-64-universal.exe"
 .\.venv\Scripts\python.exe scripts\check_env.py   # expect "ALL CHECKS PASSED"
 ```
 
+Stockfish 19 lives in `tools/` and is found automatically by `scripts/demo_run.py`.
+
 ## The 2-minute demo script
 
-**1. The landing page (45 s).** The concept, the numbers, and the tactics in one screen:
-
-```powershell
-start demo\index.html
-```
-
-- **How it works**: engine -> symbolic rules -> weak labels -> CNN -> verified explanation.
-- **Results**: three charts (quality / theme / intent) — green = CNN, grey = majority
-  baseline. Point at the theme chart: the model clearly beats the baseline; point at the
-  quality chart: it does not, and say why (83% of moves are best/excellent/good).
-- **Highlights**: six striking moves with the detected theme squares in blue and the played
-  move in yellow. Every caption is a verified claim.
-
-**2. The gallery (45 s).** Every move of two famous games, explained:
-
-```powershell
-start demo\gallery.html
-```
-
-Each card: the board before the move (theme squares blue, move yellow), the quality badge,
-the verified headline, claims grouped by kind, and an **evidence table** mapping each
-sentence to the report field behind it. Land on Morphy's Opera Game move 10. `Nxb5`
-(sacrifice) and move 17. `Rd8#` (back-rank mate).
-
-**3. The receipts (20 s).** One move, straight from the terminal, as structured data:
-
-```powershell
-.\.venv\Scripts\moveexp.exe explain `
-  --fen "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5Q2/PPPP1PPP/RNB1K1NR w KQkq - 4 4" `
-  --move "Qxf7#" --depth 14 --json
-```
-
-Every claim carries `kind`, `text`, `evidence` and `source`; `"verified": true` means each
-sentence was re-derived from the report. Drop `--json` for the plain-English version.
+1. **Double-click `run_demo.cmd`.** The terminal prints the explanation of Morphy's Nxb5 and
+   the paths to the JSON and board PNG. Point out that every line is a *fact* from the report.
+2. **In `demo/index.html`:** the pipeline diagram, then the results charts — green is the CNN,
+   grey the majority baseline. Themes and intents beat the baseline; quality does not, and the
+   caption says why.
+3. **Open `demo/process.html`** (linked from the nav): the four-column walkthrough and the
+   training figures, including the loss curve that shows the model overfitting a 1571-row
+   training set.
+4. **Open `demo/gallery.html`:** scroll the Opera Game to move 10 `Nxb5` (sacrifice) and move
+   17 `Rd8#` (back-rank mate); blue squares are the detected themes, yellow the played move.
+5. **The receipts (optional):** run `moveexp explain --fen "<FEN>" --move Qxf7# --depth 14 --json`
+   to show that every sentence carries a `kind`, `evidence` and `source`.
 
 ## Regenerate everything
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\build_demo.py --depth 12   # demo/out/*.md + *.json
-.\.venv\Scripts\python.exe scripts\make_gallery.py            # demo/gallery.html
-.\.venv\Scripts\python.exe scripts\make_site.py               # demo/index.html
+.\.venv\Scripts\python.exe scripts\build_demo.py --depth 12          # demo/out/*.md + *.json
+.\.venv\Scripts\python.exe scripts\make_gallery.py                   # demo/gallery.html
+.\.venv\Scripts\python.exe scripts\make_site.py                      # demo/index.html
+.\.venv\Scripts\python.exe scripts\train_model.py --labels data\processed\selfplay.parquet `
+    --figures-dir experiments\figures --save experiments\model.pt    # figures + checkpoint
+.\.venv\Scripts\python.exe scripts\make_process_gallery.py           # demo/process.html
 ```
 
-The neural numbers come from `scripts/generate_games.py` (self-play corpus, no downloads)
-then `scripts/train_model.py`. Nothing above needs the network.
+Nothing above needs the network.
 
 ## The one-sentence thesis
 
-Engines say *what* is good; this says *why*, and only says what it can prove — the label
-layer is rule-based and auditable, the explanation layer refuses to state a fact the report
-does not contain, and the model is evaluated honestly against the labels it was trained on.
+Engines say *what* is good; this says *why*, and only says what it can prove — the label layer
+is rule-based and auditable, the explanation layer refuses to state a fact the report does not
+contain, and the model is evaluated honestly against the labels it was trained on.
 
 ## Honest limitations (say these if asked)
 
 - **Intent is inferred consequence**, not the player's psychology — a stated design choice.
-- **Rules are noisy**: some detectors (`bishop_pair`, `bad_bishop`) fire on almost every
-  move; quantifying that with a manual audit is future work.
+- **Rules are noisy**: some detectors (`bishop_pair`, `bad_bishop`) fire on almost every move;
+  quantifying that with a manual audit is future work.
 - **Long-term plans are out of scope** (no "prepares a queenside attack in 10 moves").
-- **The model reproduces rule labels, not ground truth**; its baseline is a prior
-  predictor, not "the rules". Themes/intents learn above the baseline; move quality does
-  not, on this small self-play corpus.
+- **The model reproduces rule labels, not ground truth**; its baseline is a prior predictor,
+  not "the rules". Themes and intents learn above the baseline; move quality does not, on this
+  small self-play corpus.

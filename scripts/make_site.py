@@ -313,6 +313,7 @@ def build_html(
     <a href="#concept">Concept</a>
     <a href="#results">Results</a>
     <a href="#highlights">Highlights</a>
+    <a href="process.html">How it works &amp; how it trained →</a>
     <a href="gallery.html">Full move-by-move gallery →</a>
   </nav>
 </header>

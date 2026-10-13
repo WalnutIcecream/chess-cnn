@@ -11,6 +11,9 @@ data/audit/
 # Local engine binaries (Stockfish is GPL-3.0 and never vendored).
 tools/
 
+# Trained model checkpoints (regenerable: scripts/train_model.py --save).
+experiments/model.pt
+
 __pycache__/
 *.py[cod]
 *.egg-info/

@@ -359,3 +359,79 @@ output, model-vs-baseline chart). The contents list is a Word `TOC` field carryi
 list as cached text: open the file in Word and press Ctrl+A then F9 to populate the page
 numbers. The Page No. columns in the List of Tables / List of Figures are inherited from the
 original layout and should be confirmed after pagination.
+
+---
+
+## 15. Demo build — training diagnostics (2026-10-05)
+
+First item of the presentation/demo loop (see `.commandcode/loop.md`). `scripts/train_model.py`
+now records per-epoch training and validation loss and, when given `--figures-dir`, writes the
+process figures the upcoming gallery will display:
+
+- `loss_curves.png` — training vs validation loss per epoch.
+- `label_distribution.png` — move-quality label counts over all labelled moves.
+- `theme_f1.png`, `intent_f1.png` — per-label F1 on the held-out games.
+- `quality_confusion.png` — row-normalised quality confusion matrix.
+- `per_label_f1.csv` — the same per-label F1 values as data.
+
+New pure helpers (`confusion_matrix`, `per_label_f1`, `quality_label_counts`) with tests in
+`tests/test_train_model.py`; the results CSV is unchanged. The real run is instructive: the
+training loss falls to about 2.5 while the validation loss rises past 8 after roughly epoch
+20, i.e. the model overfits a 1571-row training set — which is precisely why the trainer keeps
+the best-validation checkpoint rather than the final weights. 321 tests pass, `ruff` clean.
+
+---
+
+## 16. Demo build — process gallery (2026-10-05)
+
+Second item of the demo loop. `scripts/make_process_gallery.py` builds `demo/process.html`, an
+offline gallery in two halves:
+
+- **Working process** — a walkthrough strip taken from a real move in the corpus (Morphy's
+  10.Nxb5, ply 18): the board with the detected theme squares coloured, the rule report
+  (quality, themes, intent, positional change), the verified explanation, and the trained
+  model's own head outputs for the same move, annotated with whether it agrees with the rule
+  label.
+- **Training process** — the five figures from `scripts/train_model.py --figures-dir`, each
+  captioned with the script that produced it.
+
+`train_model.py` gained an optional `--save` flag so the gallery can show real per-move model
+predictions; the checkpoint is `experiments/model.pt` (git-ignored, regenerable). Images are
+embedded as base64 and the board is inline SVG, so the page opens with no network. It is
+linked from the `demo/index.html` navigation and was verified by a headless-Chrome render.
+6 new tests; 327 pass, `ruff` clean.
+
+---
+
+## 17. Demo build — live runner (2026-10-05)
+
+Third item of the demo loop. `scripts/demo_run.py` is the live path and is **zero-argument by
+default**: with no options it explains Morphy's 10.Nxb5 (read from `demo/out/opera.json`, with a
+built-in mate-in-one fallback), prints the verified explanation to the terminal, writes
+`demo/live/showcase.json` (report + explanation + claims) and renders `demo/live/showcase.png` —
+a board with the detected theme squares in blue, the played move in yellow, and a move arrow.
+`--fen/--move` and `--pgn` override the default.
+
+The engine is located automatically (STOCKFISH_PATH, then the repo's `tools/` drop, then PATH),
+so the command needs no environment setup on the demo machine, and the console streams are
+reconfigured to UTF-8 so the em dashes print correctly on Windows. 7 new tests; 334 pass,
+`ruff` clean. Verified by running the zero-argument form and inspecting the rendered board.
+
+---
+
+## 18. Demo build — one-command launcher (2026-10-05)
+
+Final item of the demo loop. `run_demo.cmd` in the repository root is the whole demo: one
+double-clickable, argument-free batch file that runs the live showcase
+(`scripts/demo_run.py`) and then opens `demo/index.html` in the default browser. It resolves its
+own directory (`%~dp0`) so it works when double-clicked from anywhere, prefers the in-repo venv
+Python and falls back to `python`, honours `MOVEXP_NO_BROWSER=1` to skip the browser (used for
+the smoke test), and pauses so a failure is readable.
+
+`DEMO.md` now leads with the double-click and the one-line fallback, then the pages, then the
+2-minute script. All three demo pages were regenerated from their scripts so disk matches the
+code, and the whole chain was smoke-tested end to end with the browser suppressed.
+
+This completes the demo/presentation backlog (items 1–4): training diagnostics, the process
+gallery, the zero-argument live runner, and the one-command launcher. 334 tests pass, `ruff`
+clean.

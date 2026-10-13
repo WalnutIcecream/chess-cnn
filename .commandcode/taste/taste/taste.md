@@ -24,3 +24,6 @@
 - When reproducing or adapting an existing document/template, expects the exact format, structure and section numbering to be preserved — "do not stray from the format given". Confidence: 0.8
 - Wants reports to justify the thought process and the decision behind every action, and to state limitations, problems encountered and the fixes/clever workarounds found, so the document reads intuitively. Confidence: 0.8
 - Prefers academic/report deliverables produced as .docx (generated reproducibly rather than hand-edited). Confidence: 0.6
+- Wants demo/presentation artefacts to come from a real, live run — a command that takes user-supplied input and produces genuine output plus real screenshots/figures — rather than canned, mocked or pre-recorded material. Confidence: 0.6
+- Wants the demo to expose the working process, not just results: an image/visual gallery showing how it was trained and how it works (loss curves, label distributions, per-head metrics, pipeline walkthrough), since a model's behaviour is otherwise not visible. Confidence: 0.6
+- Wants demos launched with zero typing in front of an audience: a single command with no arguments, ideally one double-clickable file at the repo root (e.g. run_demo.cmd), with any inputs defaulted to a built-in showcase so nothing has to be typed live. Confidence: 0.75
