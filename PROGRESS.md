@@ -1,6 +1,6 @@
 # Chess Move Explainer — Progress & Status Report
 
-> Auto-generated status snapshot. Last updated: 2026-10-03.
+> Auto-generated status snapshot. Last updated: 2026-10-18.
 
 ## 1. Project overview
 
@@ -11,16 +11,18 @@ a chess move. Three layers, built in order:
    `python-chess` rules detect tactical + positional themes and derive intent tags. Output is a
    structured `MoveReport` per move.
 2. **Dataset layer** (Stage 3): run the symbolic layer at scale over sampled positions to produce
-   a weakly-supervised labelled dataset.
+   a weakly-supervised labelled dataset. **Superseded for tactics**: the Lichess puzzle database
+   provides independent, human-curated labels, so concepts are now trained and measured against
+   real ground truth instead of our own rules (see §19 and `docs/DATASETS.md`).
 3. **Learning layer** (Stages 4–5): a neural net predicts the labels from the board alone, then an
    LLM turns verified reports into prose.
 
 **Repo:** `/home/walnut/chess-ai` (Python 3.11+, package `moveexp`).
 
-**Environment used for this work:**
-- Python 3.13 venv: `/tmp/opencode/venv`
-- Stockfish 19 (built from source): `/tmp/opencode/stockfish/src/stockfish`
-  (the nixpkgs Stockfish 18 build is unreliable and must not be used)
+**Environment used for this work (NixOS, 2026-10-18):**
+- `nix-shell` (the project's `shell.nix`) for `libstdc++`/`zlib`/`zstd`, then an in-repo
+  `.venv` (`pip install -e '.[dev]'`, CPU `torch`)
+- Stockfish: **not required** for the puzzle layer (all detectors are pure `python-chess`)
 - Lint/format: `ruff`
 
 ---
@@ -29,13 +31,13 @@ a chess move. Three layers, built in order:
 
 | Metric | Value |
 | --- | --- |
-| Milestones complete | **M1 ✅  M2 ✅** (M3–M10 pending) |
-| Test suite | **279 passed** (with Stockfish); engine tests auto-skip without it |
+| Milestones complete | symbolic layer, explanation layer, demo, **data layer**, **puzzle benchmark**, **concept classifier** (see `README.md` roadmap) |
+| Test suite | **371 passed, 18 skipped** (389 collected); engine tests auto-skip without Stockfish |
 | Lint / format | `ruff check` clean, `ruff format --check` clean |
-| Theme detectors registered | **40** |
+| Theme detectors registered | **54** (40 original + 14 puzzle-tag tactics) |
 | Static intent detectors | **9** (+ 2 engine-backed threat tags, opt-in) |
-| Frozen vocabularies | 40 themes · 11 intents · 8 quality labels |
-| Line coverage of the brief | Sections 5–6 (Stages 1–2) implemented; Sections 8–11 (Stages 3–5) not started |
+| Frozen vocabularies | 54 themes · 11 intents · 8 quality labels (`DATASET_VERSION` = `v2`) |
+| Line coverage of the brief | Sections 5–6 (Stages 1–2) implemented; Stage 3 partially, via the puzzle corpus |
 
 ---
 
@@ -435,3 +437,94 @@ code, and the whole chain was smoke-tested end to end with the browser suppresse
 This completes the demo/presentation backlog (items 1–4): training diagnostics, the process
 gallery, the zero-argument live runner, and the one-command launcher. 334 tests pass, `ruff`
 clean.
+
+---
+
+## 19. Real dataset, tagged concepts, and a measured detector benchmark (2026-10-18)
+
+The core problem until now: the only trained artifact ran on 40 self-play games whose labels
+came from *our own rules*, so it measured imitation, not correctness. This section replaces
+that with an independent source and the first honest numbers about detector quality.
+
+### What was built
+
+- **Data layer** (`src/moveexp/data/`): a resumable, stdlib-only downloader and streaming
+  `.zst` readers, plus `scripts/download_data.py`. The Lichess puzzle database
+  (`lichess_db_puzzle.csv.zst`, 6.16M tagged puzzles, CC0) is now on disk.
+- **Tag taxonomy + mapping** (`src/moveexp/data/puzzle_themes.py`): the Lichess tag vocabulary
+  and its injective mapping onto `THEME_VOCAB`, shared by the benchmark and the dataset builder
+  so both measure the same label space. Phase/length/strength tags are dropped.
+- **14 new tactic detectors** (`themes/tactics_ext.py`), including **line-aware** ones: the
+  `DetectionContext` now carries an optional continuation, so `attraction`, `clearance` and
+  `intermezzo` — facts about the *line*, not one position — are detectable for the first time
+  (this is the same reason `decoy` was absent before). `THEME_VOCAB` is now 54 and
+  `DATASET_VERSION` is `v2`.
+- **Puzzle benchmark** (`eval/puzzle_benchmark.py`): reads the `.zst` directly, maps tags,
+  passes the solution continuation, and reports per-theme precision/recall/F1.
+- **Concept dataset + classifier**: `scripts/build_puzzle_dataset.py` (one row per puzzle key
+  move, targets = mapped Lichess tags) and `scripts/train_concepts.py` (the `MoveNet` theme
+  head, per-tag thresholds tuned on validation).
+- Also fixed while here: `shell.nix` now puts `zlib`/`zstd` on the loader path (numpy and
+  pyarrow would not import without it); `matplotlib`/`python-docx` were missing from
+  `pyproject.toml`; and `pipeline._game_id` no longer treats python-chess's default
+  `Site == "?"` as a real game id (the latent split-leakage bug from §12).
+
+### Result 1 — the concept classifier learns real concepts
+
+`scripts/build_puzzle_dataset.py --n 200000` -> 120,610 rows over 27 tactic themes;
+`scripts/train_concepts.py` on 96,488/12,061/12,061 (train/val/test, split by puzzle).
+
+| prediction | micro F1 | macro F1 |
+| --- | --- | --- |
+| model | **0.436** | **0.313** |
+| prevalence baseline | 0.000 | 0.000 |
+
+The baseline is degenerate (no tag occurs in >50% of rows, so the per-tag majority predictor
+is all-off), so read these as "the network recovers real, independent concepts the trivial
+prior cannot", not as a strong bar. Best per-tag F1: `attacking_f2f7` 0.81,
+`back_rank_mate` 0.74, `kingside_attack` 0.70, `advanced_pawn` 0.62, `fork` 0.50. Eight rare
+tags score 0.00: the global threshold (0.65, tuned for macro F1) never fires on them, which is
+what per-tag thresholds are for (next step).
+
+### Result 2 — the detector benchmark, and what it actually measures
+
+20,000 sampled puzzles, 17,067 tagged tactics (`data/audit/puzzle_benchmark.csv`):
+
+| theme | gold | detected | P | R | F1 |
+| --- | --- | --- | --- | --- | --- |
+| smothered_mate | 75 | 75 | 1.00 | 1.00 | 1.00 |
+| en_passant | 32 | 32 | 1.00 | 1.00 | 1.00 |
+| promotion | 501 | 504 | 0.99 | 1.00 | 1.00 |
+| double_check | 104 | 103 | 1.00 | 0.99 | 1.00 |
+| under_promotion | 8 | 10 | 0.80 | 1.00 | 0.89 |
+| advanced_pawn | 1,219 | 1,557 | 0.67 | 0.85 | 0.75 |
+| fork | 2,586 | 7,721 | 0.33 | 0.99 | 0.50 |
+| discovered_attack | 1,058 | 2,380 | 0.31 | 0.69 | 0.43 |
+| pin | 1,246 | 6,306 | 0.20 | 1.00 | 0.33 |
+| ... | | | | | |
+| x_ray | 71 | 6,561 | 0.00 | 0.23 | 0.00 |
+| interference | 59 | 1,181 | 0.00 | 0.02 | 0.00 |
+| overloaded_defender | 0 | 1,150 | 0.00 | 0.00 | 0.00 |
+
+**The important finding is that the low rows are mostly not a tuning problem.** Lichess tags
+are of two kinds, and the benchmark conflates them:
+
+1. **move-level motifs** — `fork`, `pin`, `skewer`, `smothered_mate`, `en_passant`,
+   `double_check`, `promotion`. "This move forks" is decidable from the position, and those
+   detectors do well (F1 0.5–1.0).
+2. **puzzle-level descriptions** — `kingside_attack`, `quiet_move`, `defensive_move`,
+   `attraction`, `clearance`, `intermezzo`, `capturing_defender`, `x_ray`, `hanging_piece`.
+   These describe *the puzzle as a whole* ("this is a kingside attack"), so a per-move rule is
+   structurally mismatched to the label however it is tuned.
+
+Tightening the three worst new detectors (an in-between move now needs an exchange in
+progress; a wing attack now has to hit an enemy *piece* on the wing; a clearing move must be
+quiet) moved precision by ~0.00–0.01 and total detections by 20–45% — evidence for exactly
+that reading. `pin` (R = 1.00) and `fork` (R = 0.99) show the other half of the same story: the
+motif is found, but the tag requires it to be the *point* of the puzzle.
+
+Next steps, in order: a per-tag threshold for the classifier, splitting the benchmark report
+into move-level vs puzzle-level tags so the two are not averaged together, and a real
+move-quality corpus from Lichess games (`README.md` roadmap M7).
+
+389 tests collected; 371 pass and 18 engine tests skip without Stockfish. `ruff` clean.

@@ -15,7 +15,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from moveexp.config import INTENT_VOCAB, THEME_VOCAB  # noqa: E402
+from moveexp.config import INTENT_VOCAB, QUALITY_LABELS, THEME_VOCAB  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 _SPEC = importlib.util.spec_from_file_location("train_model", ROOT / "scripts" / "train_model.py")
@@ -52,6 +52,18 @@ def test_quality_label_counts() -> None:
     counts = train.quality_label_counts(np.array([0, 0, 5]), 8)
     assert len(counts) == 8
     assert counts[0] == 2 and counts[5] == 1
+
+
+def test_labels_from_loss_wp_uses_the_symbolic_thresholds() -> None:
+    labels = train.labels_from_loss_wp(np.array([0.0, 0.01, 0.03, 0.07, 0.15, 0.9]))
+    assert [QUALITY_LABELS[i] for i in labels] == [
+        "best",
+        "excellent",
+        "good",
+        "inaccuracy",
+        "mistake",
+        "blunder",
+    ]
 
 
 def test_write_figures_emits_expected_files(tmp_path: Path) -> None:

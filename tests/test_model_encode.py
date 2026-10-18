@@ -2,10 +2,21 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 from moveexp.config import THEME_VOCAB
-from moveexp.model import N_PLANES, build_dataset, encode_board, group_split, n_planes
+from moveexp.model import (
+    N_PLANES,
+    augment_planes,
+    build_dataset,
+    colour_flip,
+    encode_board,
+    group_split,
+    mirror_files,
+    n_planes,
+)
+from moveexp.model.encode import PIECE_PLANES
 
 START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 BLACK_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1"
@@ -72,3 +83,38 @@ def test_group_split_keeps_games_whole_and_disjoint() -> None:
     assert not (groups["val"] & groups["test"])
     assert groups["test"]  # at least one game reaches the held-out split
     assert sum(len(idx) for idx in split.values()) == len(game_ids)
+
+
+# ------------------------------------------------------------------ symmetry augmentation
+def test_mirror_files_sends_the_a_file_to_the_h_file() -> None:
+    x = encode_board("8/8/8/8/8/8/8/N7 w - - 0 1")  # a lone white knight on a1
+    mirrored = mirror_files(x)
+    assert mirrored[PIECE_PLANES.index("N"), 7, 7] == 1.0  # a1 -> h1
+    assert mirrored[:12].sum() == 1.0
+    assert mirrored[12].sum() == 64.0  # side to move is unchanged by a reflection
+
+
+def test_colour_flip_swaps_colours_and_rotates() -> None:
+    x = encode_board("8/8/8/8/8/8/4P3/8 w - - 0 1")  # a lone white pawn on e2
+    flipped = colour_flip(x)
+    # e2 -> colour-swapped and rotated 180 degrees -> black pawn on d7 (row 1, file 3).
+    assert flipped[PIECE_PLANES.index("p"), 1, 3] == 1.0
+    assert flipped[:12].sum() == 1.0
+    assert flipped[12].sum() == 0.0  # now black to move
+
+
+def test_colour_flip_is_an_involution() -> None:
+    x = encode_board(START_FEN, "e2e4")
+    assert np.array_equal(colour_flip(colour_flip(x)), x)
+
+
+def test_augment_planes_defaults_to_identity() -> None:
+    x = encode_board(START_FEN, "e2e4")
+    assert np.array_equal(augment_planes(x), x)
+
+
+def test_augment_planes_works_on_a_whole_batch() -> None:
+    batch = np.stack([encode_board(START_FEN), encode_board(BLACK_FEN)])
+    out = augment_planes(batch, mirror=True, switch_colour=True)
+    assert out.shape == batch.shape
+    assert out[..., :12, :, :].sum() == batch[..., :12, :, :].sum()  # pieces are conserved

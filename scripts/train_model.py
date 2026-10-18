@@ -24,83 +24,58 @@ from moveexp.config import (
     INTENT_VOCAB,
     PROJECT_ROOT,
     QUALITY_LABELS,
+    QUALITY_LOSS_WP_THRESHOLDS,
     SPLIT_FRACTIONS,
     THEME_VOCAB,
 )
 from moveexp.model import build_dataset, build_intent_targets, group_split
+
+# Re-exported for the tests that load this module by path; the definitions live in
+# moveexp.model.metrics so the concept trainer and this script share one source of truth.
+from moveexp.model.metrics import (  # noqa: F401
+    accuracy,
+    confusion_matrix,
+    macro_f1,
+    multilabel_macro_f1,
+    multilabel_micro_f1,
+    per_label_f1,
+    quality_label_counts,
+)
 from moveexp.model.network import MoveNet
 
 RESULTS_CSV = PROJECT_ROOT / "experiments" / "model_vs_rules.csv"
 
 
 # --------------------------------------------------------------------------------------
-# Metrics (hand-rolled: sklearn is not a dependency)
+# Metrics
+# --------------------------------------------------------------------------------------
+# Provided by moveexp.model.metrics (imported above) so this script and train_concepts.py
+# cannot drift apart.
+
+
+# --------------------------------------------------------------------------------------
+# Quality-from-regression
 # --------------------------------------------------------------------------------------
 
 
-def accuracy(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    return float((y_true == y_pred).mean()) if len(y_true) else 0.0
+def labels_from_loss_wp(loss_wp: np.ndarray) -> np.ndarray:
+    """Derive ``QUALITY_LABELS`` indices from predicted win-probability loss.
 
-
-def macro_f1(y_true: np.ndarray, y_pred: np.ndarray, n_classes: int) -> float:
-    """Macro F1 over classes present in the union of truth and predictions."""
-    scores: list[float] = []
-    for cls in range(n_classes):
-        tp = int(((y_pred == cls) & (y_true == cls)).sum())
-        fp = int(((y_pred == cls) & (y_true != cls)).sum())
-        fn = int(((y_pred != cls) & (y_true == cls)).sum())
-        if tp + fp + fn == 0:
-            continue
-        precision = tp / (tp + fp) if tp + fp else 0.0
-        recall = tp / (tp + fn) if tp + fn else 0.0
-        scores.append(2 * precision * recall / (precision + recall) if precision + recall else 0.0)
-    return float(np.mean(scores)) if scores else 0.0
-
-
-def _binary_f1(true_col: np.ndarray, pred_col: np.ndarray) -> float | None:
-    tp = int((true_col * pred_col).sum())
-    fp = int(((1 - true_col) * pred_col).sum())
-    fn = int((true_col * (1 - pred_col)).sum())
-    if tp + fp + fn == 0:
-        return None
-    precision = tp / (tp + fp) if tp + fp else 0.0
-    recall = tp / (tp + fn) if tp + fn else 0.0
-    return 2 * precision * recall / (precision + recall) if precision + recall else 0.0
-
-
-def multilabel_micro_f1(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    tp = int((y_true * y_pred).sum())
-    fp = int(((1 - y_true) * y_pred).sum())
-    fn = int((y_true * (1 - y_pred)).sum())
-    precision = tp / (tp + fp) if tp + fp else 0.0
-    recall = tp / (tp + fn) if tp + fn else 0.0
-    return 2 * precision * recall / (precision + recall) if precision + recall else 0.0
-
-
-def multilabel_macro_f1(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    scores = [
-        score
-        for col in range(y_true.shape[1])
-        if (score := _binary_f1(y_true[:, col], y_pred[:, col])) is not None
-    ]
-    return float(np.mean(scores)) if scores else 0.0
-
-
-def confusion_matrix(y_true: np.ndarray, y_pred: np.ndarray, n_classes: int) -> np.ndarray:
-    """Counts of ``(true, predicted)`` pairs, shape ``(n_classes, n_classes)``."""
-    matrix = np.zeros((n_classes, n_classes), dtype=np.int64)
-    np.add.at(matrix, (y_true.astype(int), y_pred.astype(int)), 1)
-    return matrix
-
-
-def per_label_f1(y_true: np.ndarray, y_pred: np.ndarray) -> list[float | None]:
-    """Per-column F1 for binary multi-label arrays (``None`` when a column is unused)."""
-    return [_binary_f1(y_true[:, col], y_pred[:, col]) for col in range(y_true.shape[1])]
-
-
-def quality_label_counts(labels: np.ndarray, n_classes: int) -> list[int]:
-    """How many rows carry each quality class."""
-    return np.bincount(labels.astype(int), minlength=n_classes).tolist()
+    The regression head predicts ``loss_wp`` directly; the label is then read off the *same*
+    exclusive upper bounds the symbolic layer uses to create the data
+    (:data:`moveexp.config.QUALITY_LOSS_WP_THRESHOLDS`). Scoring the regression output through
+    the project's own label definition keeps the comparison with the classifier honest.
+    """
+    label_index = {label: QUALITY_LABELS.index(label) for label in QUALITY_LOSS_WP_THRESHOLDS}
+    labels = np.empty(len(loss_wp), dtype=np.int64)
+    for row, value in enumerate(loss_wp):
+        chosen = QUALITY_LABELS.index("blunder")
+        for label, bound in QUALITY_LOSS_WP_THRESHOLDS.items():
+            if value < bound:
+                chosen = label_index[label]
+                break
+        labels[row] = chosen
+    return labels
 
 
 # --------------------------------------------------------------------------------------
@@ -240,8 +215,14 @@ def _train(args: argparse.Namespace, use_move: bool) -> list[dict[str, object]]:
 
     frame = pd.read_parquet(args.labels)
     rows = frame.to_dict("records")
+    regression = args.quality_mode == "regression"
     x, y_quality, y_themes, game_ids = build_dataset(rows, use_move=use_move)
     y_intents = build_intent_targets(rows)
+    y_loss = (
+        np.array([float(row.get("loss_wp", 0.0) or 0.0) for row in rows], dtype=np.float32)
+        if regression
+        else None
+    )
     split = group_split(game_ids, seed=args.seed, fractions=SPLIT_FRACTIONS)
     train, val, test = split["train"], split["val"], split["test"]
     if len(test) == 0:
@@ -251,23 +232,33 @@ def _train(args: argparse.Namespace, use_move: bool) -> list[dict[str, object]]:
         return (
             torch.from_numpy(x[indices]),
             torch.from_numpy(y_quality[indices]),
+            torch.from_numpy(y_loss[indices]) if regression else None,
             torch.from_numpy(y_themes[indices]),
             torch.from_numpy(y_intents[indices]),
         )
 
-    x_train, yq_train, yt_train, yi_train = tensor(train)
-    x_val, yq_val, yt_val, yi_val = tensor(val)
-    x_test, yq_test, yt_test, yi_test = tensor(test)
+    x_train, yq_train, yl_train, yt_train, yi_train = tensor(train)
+    x_val, yq_val, yl_val, yt_val, yi_val = tensor(val)
+    x_test, yq_test, yl_test, yt_test, yi_test = tensor(test)
 
-    model = MoveNet(x.shape[1], channels=args.channels, hidden=args.hidden)
+    model = MoveNet(
+        x.shape[1], channels=args.channels, hidden=args.hidden, quality_mode=args.quality_mode
+    )
     optimiser = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     # Labels are heavily imbalanced (most moves are "best"; a few themes dominate), so the
-    # losses are weighted to stop the constant predictor from being a local optimum.
+    # losses are weighted to stop the constant predictor from being a local optimum. The
+    # regression variant predicts loss_wp directly, which sidesteps the imbalance altogether.
     quality_counts = np.bincount(y_quality[train], minlength=len(QUALITY_LABELS)).astype(np.float32)
     quality_weights = quality_counts.sum() / np.maximum(quality_counts, 1.0)
     quality_weights = quality_weights / quality_weights.mean()
     cross_entropy = nn.CrossEntropyLoss(weight=torch.tensor(quality_weights, dtype=torch.float32))
+
+    def quality_loss(q_out, yq, yloss):
+        if regression:
+            return nn.functional.smooth_l1_loss(q_out.squeeze(1), yloss)
+        return cross_entropy(q_out, yq)
+
     theme_frequency = y_themes[train].mean(axis=0)
     pos_weight = torch.tensor(
         np.clip((1.0 - theme_frequency) / np.maximum(theme_frequency, 1e-3), 1.0, 20.0),
@@ -292,9 +283,9 @@ def _train(args: argparse.Namespace, use_move: bool) -> list[dict[str, object]]:
         for start in range(0, len(order), args.batch_size):
             batch = order[start : start + args.batch_size]
             optimiser.zero_grad()
-            q_logits, t_logits, i_logits = model(x_train[batch])
+            q_out, t_logits, i_logits = model(x_train[batch])
             loss = (
-                cross_entropy(q_logits, yq_train[batch])
+                quality_loss(q_out, yq_train[batch], yl_train[batch])
                 + bce(t_logits, yt_train[batch])
                 + intent_bce(i_logits, yi_train[batch])
             )
@@ -304,9 +295,9 @@ def _train(args: argparse.Namespace, use_move: bool) -> list[dict[str, object]]:
             batches += 1
         model.eval()
         with torch.no_grad():
-            q_logits, t_logits, i_logits = model(x_val)
+            q_out, t_logits, i_logits = model(x_val)
             val_loss = float(
-                cross_entropy(q_logits, yq_val)
+                quality_loss(q_out, yq_val, yl_val)
                 + bce(t_logits, yt_val)
                 + intent_bce(i_logits, yi_val)
             )
@@ -326,6 +317,7 @@ def _train(args: argparse.Namespace, use_move: bool) -> list[dict[str, object]]:
                 "channels": args.channels,
                 "hidden": args.hidden,
                 "variant": "with_move" if use_move else "without_move",
+                "quality_mode": args.quality_mode,
             },
             args.save,
         )
@@ -333,11 +325,20 @@ def _train(args: argparse.Namespace, use_move: bool) -> list[dict[str, object]]:
 
     model.eval()
     with torch.no_grad():
-        q_logits, t_logits, i_logits = model(x_test)
-        q_pred = q_logits.argmax(dim=1).numpy()
+        q_out, t_logits, i_logits = model(x_test)
+        q_pred = (
+            labels_from_loss_wp(q_out.squeeze(1).numpy())
+            if regression
+            else q_out.argmax(dim=1).numpy()
+        )
         t_pred = (torch.sigmoid(t_logits) >= 0.5).float().numpy()
         i_pred = (torch.sigmoid(i_logits) >= 0.5).float().numpy()
-        train_q = model(x_train)[0].argmax(dim=1).numpy()
+        train_q_out = model(x_train)[0]
+        train_q = (
+            labels_from_loss_wp(train_q_out.squeeze(1).numpy())
+            if regression
+            else train_q_out.argmax(dim=1).numpy()
+        )
 
     yq_test_np = yq_test.numpy()
     yt_test_np = yt_test.numpy()
@@ -409,7 +410,7 @@ def _train(args: argparse.Namespace, use_move: bool) -> list[dict[str, object]]:
     ]
 
     print(
-        f"[{variant}] planes={x.shape[1]} rows={len(x)} "
+        f"[{variant}] planes={x.shape[1]} rows={len(x)} quality={args.quality_mode} "
         f"train/val/test={len(train)}/{len(val)}/{len(test)} "
         f"best_val_loss={best_val:.4f} majority_quality={QUALITY_LABELS[q_majority]} "
         f"train_acc={accuracy(yq_train.numpy(), train_q):.3f}"
@@ -432,6 +433,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--hidden", type=int, default=128)
     parser.add_argument("--seed", type=int, default=20240917)
     parser.add_argument("--no-move", action="store_true", help="Ablation: drop move planes.")
+    parser.add_argument(
+        "--quality-mode",
+        choices=("classification", "regression"),
+        default="regression",
+        help="Quality head: an 8-class softmax, or a scalar regression on loss_wp. Regression "
+        "is the default because the quality classes are extremely imbalanced and ordinal.",
+    )
     parser.add_argument("--out", type=Path, default=RESULTS_CSV)
     parser.add_argument("--overwrite", action="store_true", help="Truncate the results CSV.")
     parser.add_argument(

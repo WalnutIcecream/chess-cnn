@@ -60,6 +60,36 @@ def build_intent_targets(rows: Iterable[Mapping[str, Any]]) -> np.ndarray:
     return np.stack(vectors)
 
 
+def build_puzzle_dataset(
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    use_move: bool = True,
+) -> tuple[np.ndarray, np.ndarray, list[str]]:
+    """Turn flat puzzle rows into ``(X, theme_targets, puzzle_ids)``.
+
+    The targets come from the Lichess puzzle tags (mapped onto ``THEME_VOCAB``), which are
+    independent of this project's detectors -- so a model trained on them is measured against
+    real ground truth rather than against our own rules. ``puzzle_ids`` group the rows (one
+    puzzle can contribute several solver moves), so the split can be made per puzzle.
+    """
+    xs: list[np.ndarray] = []
+    themes: list[np.ndarray] = []
+    puzzle_ids: list[str] = []
+    channels = n_planes(use_move)
+    for row in rows:
+        move = row["move_uci"] if use_move else None
+        xs.append(encode_board(str(row["fen_before"]), move)[:channels])
+        themes.append(np.asarray(row["theme_vector"], dtype=np.float32))
+        puzzle_ids.append(str(row["puzzle_id"]))
+    if not xs:
+        raise ValueError("no rows to build a puzzle dataset from")
+    return (
+        np.stack(xs).astype(np.float32),
+        np.stack(themes).astype(np.float32),
+        puzzle_ids,
+    )
+
+
 def group_split(
     game_ids: list[str],
     *,

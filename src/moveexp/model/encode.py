@@ -52,3 +52,44 @@ def encode_board(fen: str, move_uci: str | None = None) -> np.ndarray:
 def n_planes(use_move: bool) -> int:
     """Channel count for an encoder call: 15 with the move planes, 13 without."""
     return N_PLANES if use_move else N_PIECES + 1
+
+
+# --------------------------------------------------------------------------------------
+# Symmetry augmentation
+# --------------------------------------------------------------------------------------
+# The board admits two label-preserving symmetries: reflecting it left-to-right (files
+# reversed) and swapping the colours (which must be combined with a 180-degree rotation to
+# map the position onto itself). Both leave the mover's-point-of-view evaluation and every
+# theme/intent label unchanged, so they are free training data. These helpers work on a single
+# ``(C, 8, 8)`` array or a whole ``(N, C, 8, 8)`` batch: the leading axes are handled with
+# ellipsis, so the same call is used per-sample and per-batch.
+
+
+def colour_flip(planes: np.ndarray) -> np.ndarray:
+    """Swap white and black and rotate the board 180 degrees (a board symmetry).
+
+    A bare colour swap is not a symmetry -- it would send a white pawn on e2 to a black pawn
+    on e2, where pawns move the other way. Rotating as well sends it to e7, which is the same
+    position seen from the other side and has identical labels.
+    """
+    out = np.empty_like(planes)
+    half = N_PIECES // 2  # six piece types per colour
+    pieces = planes[..., :N_PIECES, :, :]
+    out[..., :half, :, :] = pieces[..., half:, :, :][..., ::-1, ::-1]
+    out[..., half:N_PIECES, :, :] = pieces[..., :half, :, :][..., ::-1, ::-1]
+    out[..., N_PIECES, :, :] = 1.0 - planes[..., N_PIECES, :, :]
+    out[..., N_PIECES + 1 :, :, :] = planes[..., N_PIECES + 1 :, :, :][..., ::-1, ::-1]
+    return out
+
+
+def mirror_files(planes: np.ndarray) -> np.ndarray:
+    """Reflect the board left-to-right: the a-file becomes the h-file (a board symmetry)."""
+    return planes[..., ::-1].copy()
+
+
+def augment_planes(
+    planes: np.ndarray, *, mirror: bool = False, switch_colour: bool = False
+) -> np.ndarray:
+    """Apply the requested label-preserving symmetries to ``planes`` (single or batch)."""
+    out = colour_flip(planes) if switch_colour else planes
+    return mirror_files(out) if mirror else out

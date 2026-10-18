@@ -52,7 +52,9 @@ DEFAULT_CACHE_DB: Final[Path] = CACHE_DIR / "engine_cache.sqlite3"
 
 #: Version tag written into every labelled row. Bump it whenever the label
 #: definition changes, so old and new shards can never be silently mixed.
-DATASET_VERSION: Final[str] = "v1"
+#: v2 appends the puzzle-tag tactics to ``THEME_VOCAB`` (see themes/tactics_ext.py), so a
+#: v1 row decoded against the v2 vocabulary would be misaligned; the bump forces a relabel.
+DATASET_VERSION: Final[str] = "v2"
 
 # --------------------------------------------------------------------------------------
 # Engine defaults
@@ -248,6 +250,24 @@ THEME_VOCAB: Final[tuple[str, ...]] = (
     "bad_bishop",  # bishop blocked by its own pawns / wrong colour
     "develops_piece",  # minor piece or rook leaves the back rank
     "controls_center",  # move gains central control (d4/e4/d5/e5 area)
+    # -- puzzle-tag tactics (themes/tactics_ext.py) ------------------------------------
+    # These mirror the Lichess puzzle tag vocabulary so the detectors have an
+    # independent, human-curated ground truth to be measured against
+    # (see eval/puzzle_benchmark.py and moveexp.data.puzzle_themes). APPEND ONLY.
+    "attraction",  # a sacrifice lures an enemy piece onto a losing square
+    "clearance",  # the move vacates a square/line a following move needs
+    "capturing_defender",  # the move removes the defender of an attacked target
+    "intermezzo",  # an in-between move (zwischenzug) before the expected recapture
+    "quiet_move",  # the winning continuation is neither a check nor a capture
+    "zugzwang",  # every legal reply worsens the opponent's position
+    "smothered_mate",  # mate with the king hemmed in by its own pieces
+    "en_passant",  # the move captures en passant
+    "under_promotion",  # the move promotes to something other than a queen
+    "advanced_pawn",  # a far-advanced passed pawn is the point of the move
+    "defensive_move",  # the move parries a concrete, statically-visible threat
+    "attacking_f2f7",  # the move attacks the f2/f7 square next to the enemy king
+    "kingside_attack",  # the move adds pressure on the enemy's kingside
+    "queenside_attack",  # the move adds pressure on the enemy's queenside
 )
 
 #: Stable, ordered intent vocabulary (Section 6.6). Append-only, like THEME_VOCAB.

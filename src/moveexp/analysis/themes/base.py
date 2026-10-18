@@ -127,10 +127,26 @@ class DetectionContext:
     features_before: FeatureSnapshot
     features_after: FeatureSnapshot
 
+    continuation: tuple[chess.Move, ...] = ()
+    """Moves played *after* ``move``, when the caller knows them.
+
+    A few motifs are facts about the line rather than one position -- a piece is "attracted"
+    only if the opponent actually takes the bait, a square is "cleared" only if a later move
+    uses it. Those detectors read this and return ``None`` when it is empty, so the layer is
+    unchanged for callers that only have the position (the puzzle solution and the engine PV
+    are the two sources; see :mod:`moveexp.analysis.themes.tactics_ext`).
+    """
+
     @classmethod
-    def from_move(cls, board: chess.Board, move: chess.Move) -> DetectionContext:
+    def from_move(
+        cls,
+        board: chess.Board,
+        move: chess.Move,
+        continuation: Sequence[chess.Move] | None = None,
+    ) -> DetectionContext:
         """Play ``move`` on a copy and collect everything the detectors read.
 
+        :param continuation: the moves that follow, in order, if known (``None`` = not known).
         :raises ValueError: if ``move`` is not legal in ``board``.
         """
         if move not in board.legal_moves:
@@ -146,7 +162,24 @@ class DetectionContext:
             see=see_after_move(board, move),
             features_before=snapshot(board, side),
             features_after=snapshot(after, side),
+            continuation=tuple(continuation or ()),
         )
+
+    @property
+    def continuation_boards(self) -> tuple[chess.Board, ...]:
+        """Positions after each continuation move, stopping at the first illegal one.
+
+        ``continuation_boards[0]`` is the position after the opponent's reply, i.e. the one
+        the mover faces on their next turn.
+        """
+        boards: list[chess.Board] = []
+        cursor = self.after.copy(stack=False)
+        for move in self.continuation:
+            if move not in cursor.legal_moves:
+                break
+            cursor.push(move)
+            boards.append(cursor.copy(stack=False))
+        return tuple(boards)
 
     # -- convenience readers, so detectors stay free of board plumbing --------------------
     @property

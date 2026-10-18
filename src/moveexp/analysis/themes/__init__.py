@@ -38,6 +38,7 @@ def register_all() -> None:
     from . import material as _material  # noqa: F401
     from . import structure as _structure  # noqa: F401
     from . import tactics as _tactics  # noqa: F401
+    from . import tactics_ext as _tactics_ext  # noqa: F401
 
     # Importing is sufficient because each module calls ``@detector`` at import time.
 

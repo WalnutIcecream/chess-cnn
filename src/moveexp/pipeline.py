@@ -63,6 +63,26 @@ def _pv_uci(lines_before, move: chess.Move, lines_after) -> list[str]:
     return []
 
 
+def _continuation_moves(board_after: chess.Board, pv: list[str]) -> list[chess.Move]:
+    """Parse a UCI continuation, stopping at the first move that is not legal.
+
+    The line-aware detectors (``themes/tactics_ext.py``) need the moves *after* the played
+    one; a truncated or garbage PV simply yields a shorter continuation rather than an error.
+    """
+    moves: list[chess.Move] = []
+    cursor = board_after.copy(stack=False)
+    for uci in pv:
+        try:
+            move = chess.Move.from_uci(uci)
+        except ValueError:
+            break
+        if move not in cursor.legal_moves:
+            break
+        moves.append(move)
+        cursor.push(move)
+    return moves
+
+
 def _provenance(
     engine_name: str | None,
     engine_author: str | None,
@@ -198,7 +218,12 @@ def analyse_move(
         win_prob_after=quality.win_prob_after,
     )
 
-    detection = DetectionContext.from_move(board_before, move)
+    pv = _pv_uci(lines_before, move, lines_after)
+    # The engine's own line after the move is the best continuation available offline; the
+    # line-aware detectors use it (and stay silent when it is empty, e.g. a mate ends the game).
+    detection = DetectionContext.from_move(
+        board_before, move, continuation=_continuation_moves(board_after, pv)
+    )
     themes = run_all(detection)
     delta = positional_delta(board_before, move)
 
@@ -238,7 +263,7 @@ def analyse_move(
         themes=[hit.to_model() for hit in themes],
         positional_delta=delta if isinstance(delta, PositionalDelta) else PositionalDelta(**delta),
         intent=[tag.to_model() for tag in intents],
-        pv=_pv_uci(lines_before, move, lines_after),
+        pv=pv,
         meta=AnalysisMeta(
             engine_path=engine_path,
             engine_id=engine_id,
@@ -256,9 +281,14 @@ def analyse_move(
 
 
 def _game_id(game: chess.pgn.Game) -> str:
-    """Deterministic id for a game: a hash of its move list (falls back to ``Site``)."""
-    site = game.headers.get("Site", "")
-    if site:
+    """Deterministic id for a game: its ``Site`` if real, else a hash of its move list.
+
+    python-chess defaults ``Site`` to ``"?"``, so an empty-or-``"?"`` header must fall
+    through to the move hash -- otherwise every headerless PGN collapses into one game id and
+    the game-level train/val/test split silently becomes a row-level split (leakage).
+    """
+    site = (game.headers.get("Site") or "").strip()
+    if site and site != "?":
         return site
     moves = " ".join(move.uci() for move in game.mainline_moves())
     return hashlib.sha1(moves.encode("utf-8")).hexdigest()[:16]

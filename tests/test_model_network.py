@@ -23,3 +23,15 @@ def test_movenet_gradients_flow() -> None:
     quality, themes, intents = model(torch.randn(2, 13, 8, 8))
     (quality.sum() + themes.sum() + intents.sum()).backward()
     assert any(param.grad is not None for param in model.parameters())
+
+
+def test_movenet_regression_quality_head_is_scalar() -> None:
+    model = MoveNet(15, channels=8, hidden=16, quality_mode="regression")
+    quality, themes, intents = model(torch.zeros(4, 15, 8, 8))
+    assert quality.shape == (4, 1)
+    assert themes.shape == (4, len(THEME_VOCAB))
+
+
+def test_movenet_rejects_an_unknown_quality_mode() -> None:
+    with pytest.raises(ValueError, match="quality_mode"):
+        MoveNet(15, quality_mode="softmax-ish")

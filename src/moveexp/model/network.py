@@ -13,7 +13,18 @@ from ..config import INTENT_VOCAB, QUALITY_LABELS, THEME_VOCAB
 
 
 class MoveNet(nn.Module):
-    """Conv trunk + global pool, with quality, theme and intent heads."""
+    """Conv trunk + global pool, with quality, theme and intent heads.
+
+    ``quality_mode`` selects the quality head's shape:
+
+    * ``"classification"`` (default) -- a softmax over the discrete ``QUALITY_LABELS``;
+    * ``"regression"`` -- a single scalar predicting ``loss_wp`` directly.
+
+    The classification head is a poor fit for the quality label: the classes are extremely
+    imbalanced (most moves are "best"), and "best" is defined by a rank/threshold rule rather
+    than a natural category. Regressing the underlying ``loss_wp`` and deriving the label from
+    the existing thresholds keeps the ordinal structure and avoids the arbitrary boundaries.
+    """
 
     def __init__(
         self,
@@ -24,8 +35,14 @@ class MoveNet(nn.Module):
         n_quality: int = len(QUALITY_LABELS),
         channels: int = 32,
         hidden: int = 64,
+        quality_mode: str = "classification",
     ) -> None:
         super().__init__()
+        if quality_mode not in ("classification", "regression"):
+            raise ValueError(
+                f"quality_mode must be 'classification' or 'regression', got {quality_mode!r}"
+            )
+        self.quality_mode = quality_mode
         self.features = nn.Sequential(
             nn.Conv2d(in_planes, channels, 3, padding=1),
             nn.ReLU(),
@@ -41,11 +58,15 @@ class MoveNet(nn.Module):
             nn.ReLU(),
             nn.Dropout(0.2),
         )
-        self.quality = nn.Linear(hidden, n_quality)
+        self.quality = nn.Linear(hidden, n_quality if quality_mode == "classification" else 1)
         self.themes = nn.Linear(hidden, n_themes)
         self.intent = nn.Linear(hidden, n_intents)
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Return ``(quality_logits, theme_logits, intent_logits)``."""
+        """Return ``(quality, theme_logits, intent_logits)``.
+
+        ``quality`` is class logits in classification mode and a ``(n, 1)`` scalar in
+        regression mode.
+        """
         hidden = self.trunk(self.features(x))
         return self.quality(hidden), self.themes(hidden), self.intent(hidden)

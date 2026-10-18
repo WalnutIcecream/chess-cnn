@@ -5,12 +5,15 @@ worth (win probability), how critical the position was, and — later — which 
 it belonged to and what the player's intent plausibly was. The output is a
 `MoveReport` dataclass / JSON document designed to be a *training record*, not prose.
 
-Milestone status: **M2 done** (the full symbolic layer — SEE, tactical/material/
-king-safety/structure/activity theme detectors, positional features, intent tags, the
-`MoveReport` pipeline, and the `analyze-pgn` / `batch` CLI), plus the **explanation layer**
-(`src/moveexp/explain/`, the `explain` CLI) and a self-contained **demo gallery**
-(`demo/gallery.html`). The dataset builders (Stage 3) and the neural model (Stage 4) are
-not implemented yet — see [Roadmap](#roadmap).
+Milestone status: the **symbolic layer** (SEE, 54 theme detectors, positional features,
+intent tags, the `MoveReport` pipeline, and the `analyze-move` / `analyze-pgn` / `batch`
+CLI) and the **explanation layer** (`src/moveexp/explain/`, the `explain` CLI) are done, and
+so is the self-contained **demo** (`demo/`). The **data layer** (`src/moveexp/data/`) now
+downloads and streams the Lichess puzzle database, which gives the detectors an independent
+benchmark (`eval/puzzle_benchmark.py`) and the concept classifier a real, tagged dataset
+(`scripts/build_puzzle_dataset.py` -> `scripts/train_concepts.py`). See
+[docs/DATASETS.md](docs/DATASETS.md) for the corpora surveyed, and [Roadmap](#roadmap) for
+what is next.
 
 ---
 
@@ -75,20 +78,27 @@ src/moveexp/
       intent.py        IntentTag + static intent rules + null-move threat probes
   pipeline.py          assemble a full MoveReport (and a GameReport per game)
   explain/             verified explanations: facts -> render -> verify (+ explain API)
+  model/               board encoder, dataset assembly, tiny CNN, and the shared metrics
+  data/                Lichess download + streaming .zst readers + the puzzle tag mapping
   cli.py               analyze-move / analyze-pgn / batch / explain / vocab
-tests/                 316 tests; engine tests are marked `engine`
+tests/                 389 tests; engine tests are marked `engine` and skip without Stockfish
 eval/puzzle_benchmark.py   detector precision/recall vs Lichess puzzle tags
+scripts/download_data.py   resumable download of the Lichess puzzle export
+scripts/build_puzzle_dataset.py  puzzles -> the tagged concept Parquet
+scripts/train_concepts.py  train the concept classifier on the puzzle tags
 scripts/build_demo.py      explain the demo games -> demo/out/*.md + *.json
 scripts/make_gallery.py    render the demo JSON -> self-contained demo/gallery.html
 scripts/make_site.py       render demo/index.html (concept diagram + results charts + highlights)
 demo/                   games/, out/ (generated), index.html + gallery.html (the demo)
+docs/DATASETS.md        the corpora surveyed, their licences, and what we chose
 data/{raw,cache,processed,audit}/   git-ignored working directories (.gitkeep kept)
 ```
 
-`data/` is deliberately empty: no corpora are downloaded by the library. Every future
-long-running job (game downloads, bulk labelling, dataset builds) will be a standalone,
-resumable script under `scripts/` with progress logging and a runtime estimate — never
-something you have to run inside an interactive session.
+`data/` holds no committed corpora. Nothing on the analysis path downloads anything: the only
+network code is `src/moveexp/data/`, driven by `scripts/download_data.py`, and every
+long-running job (downloads, dataset builds, labelling, training) is a standalone, resumable
+script under `scripts/` with progress logging — never something you have to run inside an
+interactive session.
 
 ---
 
@@ -219,12 +229,14 @@ rules and takes `sacrifice_confirmed`, which the bulk labeller passes as `False`
 | milestone | contents |
 | --- | --- |
 | M1 ✅ | repo layout, config/schema, engine client + cache, eval utilities, move quality, criticality, `analyze-move` CLI, tests |
-| M2 ✅ | symbolic layer: SEE, theme detectors (tactics/material/king-safety/structure/activity), positional features, intent rules, `pipeline.py`, `analyze-pgn`/`batch` CLI, puzzle benchmark |
-| M3 | data acquisition: resumable downloader + streaming `.zst` readers (PGN / puzzle CSV / eval DB) |
-| M4 | sampling, dedupe, oversampling and game-level train/val/test splits |
-| M5 | resumable two-tier bulk labelling, label audit and dataset statistics |
-| M6 | neural model (multi-label themes + intent, quality head) |
-| M7 | LLM/constrained explanation layer + verifier, checked against the symbolic reports (rule-based renderer + verifier done: `src/moveexp/explain/`) |
+| M2 ✅ | symbolic layer: SEE, theme detectors (tactics/material/king-safety/structure/activity), positional features, intent rules, `pipeline.py`, `analyze-pgn`/`batch` CLI |
+| M3 ✅ | explanation layer (`explain/`) and the self-contained demo (`demo/`) |
+| M4 ✅ | data acquisition: resumable download + streaming `.zst` readers; **puzzle** benchmark against Lichess tags |
+| M5 ✅ | puzzle-tag tactic detectors (line-aware motifs included) + the versions bumped to `v2` |
+| M6 ✅ | concept dataset from the puzzle tags + the concept classifier (`train_concepts.py`) |
+| M7 | real games -> a move-quality corpus (rating bands, opening skip, flagged share) |
+| M8 | the Lichess evaluation DB as an engine-free labelling source |
+| M9 | the LLM/constrained explanation layer, checked against the symbolic reports |
 
 ## Licence / attribution
 
