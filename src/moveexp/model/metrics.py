@@ -13,6 +13,7 @@ import numpy as np
 
 __all__ = [
     "accuracy",
+    "binary_f1",
     "confusion_matrix",
     "macro_f1",
     "multilabel_macro_f1",
@@ -52,6 +53,16 @@ def _binary_f1(true_col: np.ndarray, pred_col: np.ndarray) -> float | None:
     precision = tp / (tp + fp) if tp + fp else 0.0
     recall = tp / (tp + fn) if tp + fn else 0.0
     return 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+
+
+def binary_f1(true_col: np.ndarray, pred_col: np.ndarray) -> float:
+    """F1 of one binary column, ``0.0`` when it is unused in both truth and prediction.
+
+    The scalar form of :func:`_binary_f1`, for code that tunes one label at a time (the per-tag
+    decision thresholds) and wants a number it can compare rather than an optional.
+    """
+    score = _binary_f1(true_col, pred_col)
+    return 0.0 if score is None else score
 
 
 def multilabel_micro_f1(y_true: np.ndarray, y_pred: np.ndarray) -> float:

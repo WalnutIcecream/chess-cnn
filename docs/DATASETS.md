@@ -43,22 +43,37 @@ Mapped into the project by `moveexp.data.puzzle_themes`; only the tactic tags ar
 (phase/length/strength tags like `opening`, `short`, `crushing` describe the game, not the
 move, and are dropped).
 
-### One caveat that matters when reading the numbers
+### What the tags actually measure
 
-The tactic tags are of two different kinds, and a per-move detector can only be expected to
-match the first:
+The split in `moveexp.data.puzzle_themes` is by **decidability**, and the benchmark reports the
+two groups separately:
 
-- **move-level motifs** — `fork`, `pin`, `skewer`, `smotheredMate`, `enPassant`, `doubleCheck`,
-  `promotion`. "This move forks" is decidable from the position, and the detectors score
-  F1 0.5–1.0 on these.
-- **puzzle-level descriptions** — `kingsideAttack`, `quietMove`, `defensiveMove`, `attraction`,
-  `clearance`, `intermezzo`, `capturingDefender`, `xRayAttack`, `hangingPiece`. These describe
-  the *puzzle as a whole*, so a single-position rule is mismatched to the label however it is
-  tuned.
+- **move-level** (19 tags) — decidable from one position and its move.
+- **puzzle-level** (9 tags) — true of the whole solution (`kingsideAttack`, `quietMove`,
+  `attraction`, …).
 
-The benchmark deliberately reports both, because seeing the second group score near zero next
-to the first scoring near one is the point: it tells us which detectors are trustworthy and
-which tags were never a fair target. See `eval/puzzle_benchmark.py` and `PROGRESS.md` §19.
+Measured on 20,000 puzzles: move-level macro F1 **0.407** against puzzle-level **0.146**
+(PROGRESS §20), which is the gap the split exists to expose.
+
+The loop then found a **second, stronger requirement that decidability does not capture**: a tag
+is only applied when the motif is *the point of the puzzle*, and most motifs are incidental
+almost everywhere in tactical positions. Only the near-deterministic ones clear that bar —
+`promotion`, `en_passant`, `smothered_mate`, `double_check` (F1 ≈ 1.00) and `advanced_pawn`
+(0.75). `x_ray`, `interference` and `hanging_piece` are perfectly *decidable*, yet score ≈ 0,
+because a position containing an x-ray is not a position *about* an x-ray. Tightening their
+definitions cut false positives by 11–45% and left F1 flat (PROGRESS §24) — that is what settled
+it.
+
+So the benchmark does two jobs: it says which detectors are trustworthy, and it separates "our
+rule is wrong" from "this label was never a fair target for a per-move rule".
+
+### What the built dataset looks like
+
+`scripts/build_puzzle_dataset.py --n 200000 --all-solver-moves` produces **299,986 rows** over 27
+of the 54 themes, after dropping 708 duplicate positions. Composition: 56% move-only, 23%
+puzzle-only, 21% both; rating bands <1200 27%, 1200–1599 23%, 1600–1999 22%, 2000–2399 17%,
+2400+ 10%. The builder prints all of this itself, so the numbers here can be re-derived rather
+than trusted. See `eval/puzzle_benchmark.py` and `PROGRESS.md` §19–24.
 
 ## Considered and deferred
 

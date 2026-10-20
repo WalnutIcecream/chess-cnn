@@ -74,3 +74,27 @@ def test_the_tactic_tags_the_detectors_cover_are_mapped():
         "defensiveMove",
     ):
         assert tag in pt.PUZZLE_TAG_TO_THEME, tag
+
+
+# ------------------------------------------------------------------ move vs puzzle groups
+def test_tag_groups_partition_the_mapping():
+    """Every mapped tag is in exactly one group -- no gaps, no overlaps."""
+    move = set(pt.MOVE_LEVEL_TAGS)
+    puzzle = set(pt.PUZZLE_LEVEL_TAGS)
+    assert not (move & puzzle)
+    assert move | puzzle == set(pt.PUZZLE_TAG_TO_THEME)
+
+
+def test_theme_group_is_consistent_with_tag_group():
+    for tag, theme in pt.PUZZLE_TAG_TO_THEME.items():
+        assert pt.theme_group(theme) == pt.tag_group(tag)
+
+
+def test_group_helpers_return_none_for_unknown_names():
+    assert pt.tag_group("madeUpTag") is None
+    assert pt.theme_group("madeUpTheme") is None
+
+
+def test_theme_groups_partition_the_mapped_themes():
+    assert not (pt.MOVE_LEVEL_THEMES & pt.PUZZLE_LEVEL_THEMES)
+    assert set(pt.PUZZLE_TAG_TO_THEME.values()) == pt.MOVE_LEVEL_THEMES | pt.PUZZLE_LEVEL_THEMES

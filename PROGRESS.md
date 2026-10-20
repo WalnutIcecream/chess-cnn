@@ -31,13 +31,14 @@ a chess move. Three layers, built in order:
 
 | Metric | Value |
 | --- | --- |
-| Milestones complete | symbolic layer, explanation layer, demo, **data layer**, **puzzle benchmark**, **concept classifier** (see `README.md` roadmap) |
-| Test suite | **371 passed, 18 skipped** (389 collected); engine tests auto-skip without Stockfish |
+| Milestones complete | symbolic layer, explanation layer, demo, **data layer**, **puzzle benchmark**, **concept classifier**, **detector precision pass** (see `README.md` roadmap) |
+| Test suite | **384 passed, 18 skipped** (402 collected); engine tests auto-skip without Stockfish |
 | Lint / format | `ruff check` clean, `ruff format --check` clean |
 | Theme detectors registered | **54** (40 original + 14 puzzle-tag tactics) |
 | Static intent detectors | **9** (+ 2 engine-backed threat tags, opt-in) |
 | Frozen vocabularies | 54 themes · 11 intents · 8 quality labels (`DATASET_VERSION` = `v2`) |
-| Line coverage of the brief | Sections 5–6 (Stages 1–2) implemented; Stage 3 partially, via the puzzle corpus |
+| Concept classifier (300k rows) | micro F1 0.412 / macro F1 0.374 under per-tag thresholds (top-5 baseline 0.221 / 0.046) |
+| Line coverage of the brief | Sections 5–6 (Stages 1–2) implemented; Stage 3 realised via the puzzle corpus |
 
 ---
 
@@ -528,3 +529,338 @@ into move-level vs puzzle-level tags so the two are not averaged together, and a
 move-quality corpus from Lichess games (`README.md` roadmap M7).
 
 389 tests collected; 371 pass and 18 engine tests skip without Stockfish. `ruff` clean.
+
+---
+
+## 20. Loop item 1 — tag groups and an offline puzzle fixture (2026-10-20)
+
+Section 19 read the two tag kinds off the numbers by hand. This item makes the split part of
+the code, and gives every later item a fast, offline way to measure.
+
+### What landed
+
+- `moveexp.data.puzzle_themes` now partitions the 28 mapped tags into **`MOVE_LEVEL_TAGS`**
+  (19 — decidable from the position and its move) and **`PUZZLE_LEVEL_TAGS`** (9 — true of the
+  whole puzzle), with `tag_group()` / `theme_group()` and derived theme sets. Tests pin the
+  partition as total and disjoint over the mapping domain.
+- `eval/puzzle_benchmark.py` reports in those groups: a `group` column in the CSV, one table
+  per group, and a `group_scores()` summary giving micro and macro F1 per group (they measure
+  different things — "how good are these detectors overall" vs "how good is the average
+  detector" — so both are printed).
+- **`tests/data/puzzles_sample.csv`** — a 540-puzzle, 107 KiB fixture covering 27 of the 28
+  themes, produced by `scripts/make_puzzle_fixture.py`. It is **stratified**, not random: a
+  plain sample would leave `en_passant`/`x_ray`/`interference` with a handful of positives and
+  make their F1 noise, whereas up to 20 puzzles per theme keeps every theme measurable. The
+  sampler is tested (caps, determinism, dedupe, rare-theme coverage) and `format_puzzle_row()`
+  round-trips through the parser so the fixture is written and read by the same code as the
+  real corpus.
+- `overloaded_defender` has **no** puzzle in the whole corpus — 0 gold in 20,000 — so it is
+  unmeasurable and is now known to be, rather than silently reported as F1 0.00.
+
+### The split, measured
+
+| group | themes | micro F1 | macro F1 |
+| --- | --- | --- | --- |
+| move-level | 19 | **0.242** | **0.407** |
+| puzzle-level | 9 | 0.142 | 0.146 |
+
+(20,000-puzzle corpus, `data/audit/puzzle_benchmark.csv`.) On the 540-puzzle fixture the same
+ordering holds — move 0.350 micro / 0.436 macro vs puzzle 0.248 / 0.265 — and
+`tests/test_puzzle_benchmark.py` asserts it, so the claim is now checked in CI rather than
+argued in prose. The separation is clearest on macro F1 (2.8×), which is the honest reading:
+per-theme, the move-level detectors include near-perfect ones (`promotion`, `en_passant`,
+`smothered_mate`, `double_check`, `under_promotion` all ≈ 1.00) while the best puzzle-level
+theme reaches 0.51.
+
+14 new tests; 385 collected, 367 pass and 18 engine tests skip without Stockfish. `ruff` clean.
+
+**Next in the loop**: item 2 — a non-degenerate top-k baseline and per-tag decision
+thresholds, so the classifier's 8 zero-F1 tags and its meaningless 0.000 baseline are fixed.
+
+---
+
+## 21. Loop item 2 — a real baseline and per-tag thresholds (2026-10-20)
+
+Section 19's classifier reported macro F1 0.313 with **eight tags at exactly 0.00**, and its
+only baseline scored 0.000. Both problems had the same root: a single global decision
+threshold, and a majority predictor that cannot answer anything on this data.
+
+### What landed (`scripts/train_concepts.py`)
+
+- **`top_k_baseline` / `tune_top_k`** — predict the ``k`` most common training tags on every
+  row, with ``k`` chosen by validation **micro** F1. Micro is the right criterion: macro would
+  keep rewarding a larger ``k`` (a tag predicted everywhere gets F1 = 2p/(1+p), which rises
+  with its prevalence), so macro would just pick the largest ``k``. The majority predictor is
+  kept only as the all-off reference, since no tag appears in more than half the rows.
+- **`tune_per_tag_thresholds` / `apply_per_tag_thresholds`** — one threshold per tag, each
+  maximising that tag's own F1 on validation (a grid of 0.05…0.95, step 0.05). A tag with no
+  positive in the tuning set keeps the neutral 0.5 rather than being driven to the bottom of
+  the grid against an empty column.
+- **Early stopping now tracks the reported metric** — macro F1 under per-tag thresholds — which
+  is what raised the validation curve from 0.315 to 0.356 by epoch 8.
+- `binary_f1` was added to `moveexp.model.metrics` (a scalar form of the existing private
+  helper) so the per-tag tuner and the multi-label metrics share one definition.
+- The CSV schema changed (this file is one session old): `model_global`, `model_per_tag`,
+  `all_off`, `topk_baseline`, `topk_k`.
+
+### Measured (120,610 rows, 96,488/12,061/12,061 by puzzle)
+
+| prediction | micro F1 | macro F1 |
+| --- | --- | --- |
+| model, global threshold | 0.436 | 0.313 |
+| **model, per-tag thresholds** | 0.384 | **0.349** |
+| all-off (= the old "prevalence" baseline) | 0.000 | 0.000 |
+| top-3 baseline (k chosen on val) | 0.220 | 0.031 |
+
+Three things to read carefully:
+
+1. **The eight zero tags are gone.** Every tag with test positives now scores something:
+   `capturing_defender` 0.188, `en_passant` 0.099, `x_ray` 0.099, `intermezzo` 0.092,
+   `double_check` 0.092, `clearance` 0.061, `under_promotion` 0.044, `interference` 0.029. They
+   are weak, but they are measured rather than silently zero.
+2. **Per-tag thresholds trade micro for macro** (0.436 → 0.384 micro, 0.313 → 0.349 macro).
+   That is the expected shape: lowering a rare tag's threshold buys its recall at the cost of
+   precision pooled over the common tags. Both numbers are reported so the trade is visible
+   rather than hidden behind one headline.
+3. **The bar is real now.** The top-3 baseline scores 0.220 micro / 0.031 macro where the old
+   "prevalence" baseline scored 0.000, so "the model beats the baseline" is a claim with
+   content: 0.384 vs 0.220 micro and 0.349 vs 0.031 macro.
+
+Still true from §19: eight themes have no positive in the test split at all (they are rare in
+the corpus), and `overloaded_defender` has no puzzle anywhere, so none of these can be measured
+yet.
+
+5 new tests; 389 collected, 371 pass and 18 engine tests skip without Stockfish. `ruff` clean.
+
+**Next in the loop**: item 3 — symmetry augmentation, an LR schedule and early stopping, so the
+classifier itself improves rather than only how it is read.
+
+---
+
+## 22. Loop item 3 — a training ablation, and a negative result (2026-10-20)
+
+This item set out to make the classifier better by training it better: symmetry augmentation,
+a learning-rate schedule, and early stopping. Two of the three did not help, and the loop's
+rule — prefer a measurement over a claim — says the measurement wins.
+
+### What landed (`scripts/train_concepts.py`)
+
+- **`transform_batch` / `augment_batch`** — mirror and colour-flip applied per sample. Both are
+  genuine board symmetries (the mover's win probability and every theme label are unchanged).
+  The torch implementation has a test pinning it to the numpy reference
+  `moveexp.model.encode.augment_planes`, so the two cannot drift.
+- **`cosine_lr`** — an explicit cosine decay (base rate → 5% of it), written out rather than
+  delegated to a `torch` scheduler so its shape is testable: starts at the base rate, ends at
+  the floor, never rises.
+- **Early stopping** with `--patience` (default 3), and `--epochs` raised 8 → 10.
+- Flags for every ablation: `--augment/--no-augment`, `--schedule none|cosine`, `--patience`.
+  The results CSV carries `augment` and `schedule` columns so the ablation lands in one file
+  (`experiments/concepts_ablation.csv`).
+
+### The ablation (120,610 rows, 10 epochs each, per-tag thresholds)
+
+| config | micro F1 | macro F1 | val macro F1 (last epoch) |
+| --- | --- | --- | --- |
+| **plain (10 epochs)** | **0.411** | **0.370** | 0.369 |
+| + symmetry augmentation | 0.398 | 0.343 | 0.350 |
+| + augmentation + cosine schedule | 0.313 | 0.289 | 0.291 |
+
+Top-3 baseline, unchanged: 0.220 micro / 0.031 macro.
+
+Reading, in the order the evidence supports:
+
+1. **Training longer did help.** The same configuration at 8 epochs (item 2) scored 0.349 macro;
+   at 10 epochs it scores 0.370. That is the one improvement this item actually bought.
+2. **Augmentation did not help** (0.370 → 0.343 macro). The honest phrasing is "did not help",
+   not "hurt": these are single runs on one split, and a 0.027 macro gap is close to run-to-run
+   noise. Both augmented runs were *still improving* at the epoch limit (val 0.350 and rising),
+   so this compares equal epochs, not equal convergence — augmentation costs convergence speed
+   and 10 epochs may simply not be enough budget for it to pay off.
+3. **The cosine schedule was the wrong choice for this budget.** Under a 10-epoch cosine the
+   last third of training runs at 5e-05, before the model has converged, and it is worse at
+   *every* epoch than the constant rate (0.291 vs 0.369 at epoch 10). That is an argument about
+   the schedule's time constant, not about schedules in general.
+4. Early stopping never fired — every run was still improving at epoch 10 — so it is inert here,
+   but it is what will make a longer run safe.
+
+**Both are therefore off by default**, kept as flags with the numbers recorded next to them, and
+the default configuration is the measured-best one. Re-running the headline
+(`experiments/concepts_vs_tags.csv`) with those defaults reproduces the 0.411 / 0.370 row.
+
+4 new tests (including an end-to-end trainer smoke test on a tiny synthetic dataset);
+393 collected, 375 pass and 18 engine tests skip without Stockfish. `ruff` clean.
+
+**Next in the loop**: item 4 — a bigger/cleaner puzzle dataset (all solver moves, FEN dedupe,
+richer summary), which is the other lever on the same numbers.
+
+---
+
+## 23. Loop item 4 — puzzle dataset upgrade, and a flat result (2026-10-20)
+
+This item made the dataset builder honest about what it emits and then enlarged the corpus by
+2.5×. The enlargement did not move the metric — again a negative result, recorded as measured.
+
+### What landed (`scripts/build_puzzle_dataset.py`)
+
+- **`dedupe_by_position`** — rows are deduplicated by **normalised FEN** (the project's position
+  identity: board, side, castling, en passant; counters dropped), keeping the first row of each.
+  A repeated position both inflates the set and can leak across the train/test split. On by
+  default (`--dedupe/--no-dedupe`).
+- **`rating_band` / `RATING_BANDS`** and **`tag_groups`** — every row now records which rating
+  bucket it falls in and which tag group(s) its themes belong to (`move`, `puzzle`, or both),
+  so the sample's composition is inspectable rather than assumed.
+- **A real build summary** — row count, duplicate positions dropped, theme coverage split by
+  group, rows by tag group, rows by rating band, and the most common tags.
+- `--all-solver-moves` (already present) is what the enlargement used.
+
+### The rebuild (`--n 200000 --all-solver-moves`)
+
+```
+wrote 299986 rows to data/processed/puzzles.parquet
+  sampled 200000 puzzles; 708 rows dropped as duplicate positions
+  themes covered: 27 of 54 (move-level 18, puzzle-level 9)
+  rows by tag group:      move 168794 (56.3%) | puzzle 69519 (23.2%) | move puzzle 61673 (20.6%)
+  rows by rating band:    <1200 27.4% | 1200-1599 23.3% | 1600-1999 22.2% | 2000-2399 17.3% | 2400+ 9.7%
+```
+
+2.5× the previous 120,610 rows. Two things worth noting: only **708** positions were duplicates
+(the corpus is close to position-unique, so dedupe is cheap insurance rather than a big
+cleanup), and the rating distribution is heavily weighted to the low end, as Lichess puzzles
+are.
+
+### The result
+
+| dataset | rows | micro F1 | macro F1 |
+| --- | --- | --- | --- |
+| key move only (item 3) | 120,610 | 0.4105 | 0.3700 |
+| **all solver moves (this item)** | **299,986** | **0.4124** | **0.3740** |
+
+Top-5 baseline: 0.221 micro / 0.046 macro — the model still clears it comfortably.
+
+**2.5× more data bought +0.004 macro F1, which is inside run-to-run noise.** Two changes are
+confounded here: the set grew *and* the labels got noisier (`--all-solver-moves` attaches a
+puzzle's tags to every solver move, and a long puzzle's tags need not describe each of its
+moves). The clean experiment — `--n 400000` key-move-only, same labels, larger — is the obvious
+follow-up, and is now cheap to run because the builder reports exactly what it produced.
+
+The honest summary of items 3 and 4 together: for this model and this label space, neither
+"train it harder" nor "give it more data" is the binding constraint. That points at the label
+space and the model's input, not the training loop — which is why item 5 goes back to the
+detectors, the other half of the comparison.
+
+6 new tests; 399 collected, 381 pass and 18 engine tests skip without Stockfish. `ruff` clean.
+
+**Next in the loop**: item 5 — the detector precision pass, with F1 floors pinned on the
+offline fixture.
+
+---
+
+## 24. Loop item 5 — detector rewrites, and a criterion that was not met (2026-10-20)
+
+Item 5 asked to rewrite the detectors whose *definition* is wrong (as opposed to merely
+mismatched to a puzzle-level tag) and to pin them with an offline guard. The rewrites landed,
+the guard landed, and the item's own F1 expectation **did not hold**. Recording that is the
+point of the exercise.
+
+### What landed (`src/moveexp/analysis/themes/tactics.py`)
+
+- **`x_ray`** now requires the ray to be **created by this move** — either the moved piece is the
+  slider, or the move vacated a square on the line (`_opens_ray`). Before, it reported every
+  pre-existing x-ray anywhere on the board on every move, which is not just imprecise: it made
+  the explanation layer claim an x-ray the move had nothing to do with.
+- **`interference`** now requires the shielded piece to have been **genuinely threatened** before
+  the move (or to be the king, i.e. the move blocks a check). Before, any move that happened to
+  cross an enemy slider's path counted.
+- **`hanging_piece`** now means **undefended**, not merely out-numbered (attackers > defenders).
+  A defended piece under two attackers is pressure, not a hanging piece.
+
+### Measured (20,000-puzzle corpus, before → after)
+
+| theme | detections | F1 |
+| --- | --- | --- |
+| `x_ray` | 6,561 → **4,917** (−25%) | 0.005 → 0.004 |
+| `interference` | 1,181 → **654** (−45%) | 0.002 → 0.000 |
+| `hanging_piece` | 8,152 → **7,266** (−11%) | 0.047 → 0.040 |
+| move-level group, micro F1 | — | 0.242 → **0.253** |
+| move-level group, macro F1 | — | 0.407 → 0.407 |
+
+**The item's "F1 improves" criterion is not met.** False-positive volume fell by 11–45% and the
+group's micro F1 rose (0.242 → 0.253), but the per-theme F1 for these three is flat to slightly
+*worse*: each rewrite also drops a few true positives, and precision stays near zero because the
+denominator is still thousands of legitimate-on-the-board motifs against tens of gold.
+
+The reason is the one from §19–20, now confirmed for these three as well: a tag is only applied
+when the motif is the **point of the puzzle**, and x-rays, interferences and loose pieces are
+everywhere in tactical positions. That is not something a definition can fix, and chasing it
+would mean tuning thresholds against a label that is not measuring the thing. So the rewrites
+stand on a **correctness** argument rather than a metric one — the reports no longer attribute
+other moves' motifs to this move — and the numbers are recorded as they are.
+
+`kingside_attack` / `queenside_attack` were named in the item but are **puzzle-level** by item
+1's grouping; their low precision is that mismatch, so they are reported and deliberately not
+tuned. A test pins both the measurement and the classification, so changing either is a
+deliberate act.
+
+### The regression guard (`tests/test_puzzle_benchmark.py`)
+
+`DETECTOR_EXPECTATIONS` pins, on the committed fixture, a **minimum F1 and a maximum detection
+count** for the five near-perfect detectors and the three rewritten ones. Both sides are needed:
+an F1 floor alone would be satisfied by the *old* x-ray/interference/hanging definitions, so each
+detection ceiling sits below the pre-rewrite count (198 / 51 / 222) and a revert fails offline.
+A second test pins the kingside/queenside decision above — they stay measured and stay classified
+as puzzle-level — so revisiting it has to be deliberate.
+
+The x-ray cases in `tests/test_theme_tactics.py` were also split: one test now asserts the
+detector fires when the move *creates* the ray, and a new one asserts it stays silent for a ray
+that already existed (which the old test had encoded as a hit).
+
+3 new tests; 402 collected, 384 pass and 18 engine tests skip without Stockfish. `ruff` clean.
+
+**Next in the loop**: item 6 — refresh the results surface (README, DATASETS, log), the last
+backlog item.
+
+---
+
+## 25. Loop close-out — the data & concepts loop (2026-10-20)
+
+All six backlog items are done and green. This section consolidates what the loop measured and
+what it concluded, so the next loop does not have to re-read §20–24.
+
+### Results in one place
+
+| question | result | § |
+| --- | --- | --- |
+| Do the detectors match independent labels on move-level motifs? | `promotion`, `en_passant`, `smothered_mate`, `double_check` ≈ 1.00; `advanced_pawn` 0.75; `fork` 0.50 | 19 |
+| …and on puzzle-level tags? | ≈ 0 — the tag marks the puzzle's *point*, not a per-move fact | 20 |
+| Can the classifier learn the tags at all? | macro 0.374 / micro 0.412, against a top-5 baseline of 0.046 / 0.221 | 21, 23 |
+| Did symmetry augmentation or an LR schedule help? | No — 0.343 and 0.289 macro against 0.370 plain | 22 |
+| Did 2.5× more data help? | No — 0.374 against 0.370, inside noise | 23 |
+| Did tightening three broken detectors help F1? | No — false positives −25%/−45%/−11%, F1 flat | 24 |
+
+### The finding
+
+Five independent levers were tried — training longer, augmentation, an LR schedule, 2.5× more
+data, and tighter detector definitions — and **none moved macro F1 beyond noise**. The binding
+constraint is the **label space**. Lichess tags record which motif is the *point* of a puzzle,
+and most motifs are incidental almost everywhere in tactical positions; no amount of training,
+data or rule-tightening changes that.
+
+What did work, and is now the default: **per-tag decision thresholds** (macro 0.313 → 0.349,
+§21) and **more epochs** (0.349 → 0.370, §22–23). Both are cheap and both were measured.
+
+### What is worth doing next
+
+1. **A label space a per-move model can actually predict** (roadmap M10). The obvious candidate
+   is to train on "which move does the puzzle want?" and derive motifs from the solution,
+   instead of predicting puzzle-level tags from a single position.
+2. **A move-quality corpus** (M7) — real Lichess games in a rating band. Needs an engine or the
+   eval DB, both excluded by this loop's offline constraint.
+3. **A seed sweep** on the classifier: the remaining ±0.03 macro differences are single-run, and
+   the loop repeatedly had to say "inside noise". Three seeds would make those claims decidable.
+
+### Loop hygiene
+
+Every item landed green: 402 tests collected, 384 pass, 18 engine tests skip without Stockfish;
+`ruff check` and `ruff format --check` clean; one `experiments/log.csv` row per iteration; one
+PROGRESS section per item. The fixture (`tests/data/puzzles_sample.csv`) and the two results CSVs
+are committed artefacts, so every number in §20–24 can be re-derived offline.

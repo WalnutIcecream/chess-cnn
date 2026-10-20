@@ -15,8 +15,10 @@ import pytest
 import zstandard
 
 from moveexp.data.lichess import (
+    PUZZLE_COLUMNS,
     Puzzle,
     download,
+    format_puzzle_row,
     iter_lines,
     open_text,
     parse_puzzle_row,
@@ -107,6 +109,13 @@ def test_puzzle_helpers_walk_the_solution():
 def test_puzzle_board_tolerates_a_counterless_fen():
     puzzle = Puzzle(puzzle_id="x", fen="8/8/8/8/8/8/8/K6k w - -", moves=("a1a2", "h1h2"))
     assert puzzle.board().turn == chess.WHITE
+
+
+def test_format_puzzle_row_round_trips_through_the_parser(tmp_path: Path):
+    path = _write(tmp_path / "puzzles.csv", PUZZLE_CSV, zst=False)
+    for puzzle in stream_puzzles(path):
+        row = dict(zip(PUZZLE_COLUMNS, format_puzzle_row(puzzle), strict=True))
+        assert parse_puzzle_row(row) == puzzle
 
 
 # --------------------------------------------------------------------------- download

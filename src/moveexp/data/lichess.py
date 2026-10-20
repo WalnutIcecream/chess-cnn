@@ -42,6 +42,7 @@ __all__ = [
     "PUZZLE_URL",
     "Puzzle",
     "download",
+    "format_puzzle_row",
     "iter_lines",
     "open_text",
     "reservoir_sample",
@@ -313,6 +314,28 @@ def stream_puzzles(path: str | Path) -> Iterator[Puzzle]:
             puzzle = parse_puzzle_row(raw)
             if puzzle is not None:
                 yield puzzle
+
+
+def format_puzzle_row(puzzle: Puzzle) -> list[str]:
+    """The puzzle as CSV fields in :data:`PUZZLE_COLUMNS` order (inverse of the parser).
+
+    Round-trips through :func:`parse_puzzle_row`, which is what lets the committed test
+    fixture be produced by a script and read back by exactly the same code path as the real
+    corpus.
+    """
+    return [
+        puzzle.puzzle_id,
+        puzzle.fen,
+        " ".join(puzzle.moves),
+        str(puzzle.rating),
+        str(puzzle.rating_deviation),
+        str(puzzle.popularity),
+        str(puzzle.nb_plays),
+        " ".join(puzzle.themes),
+        puzzle.game_url,
+        " ".join(puzzle.opening_tags),
+        "" if puzzle.daily_date is None else str(puzzle.daily_date),
+    ]
 
 
 def reservoir_sample(items: Iterable[object], n: int, *, seed: int = 0) -> list:

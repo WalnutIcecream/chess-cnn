@@ -26,11 +26,17 @@ __all__ = [
     "LENGTH_TAGS",
     "LICHESS_THEMES",
     "MATE_TAGS",
+    "MOVE_LEVEL_TAGS",
+    "MOVE_LEVEL_THEMES",
     "PHASE_TAGS",
+    "PUZZLE_LEVEL_TAGS",
+    "PUZZLE_LEVEL_THEMES",
     "PUZZLE_TAG_TO_THEME",
     "STRENGTH_TAGS",
     "TACTIC_TAGS",
     "THEME_TO_TAGS",
+    "tag_group",
+    "theme_group",
     "themes_from_tags",
 ]
 
@@ -175,3 +181,77 @@ def themes_from_tags(tags: Iterable[str]) -> list[str]:
     """
     wanted = {PUZZLE_TAG_TO_THEME[tag] for tag in tags if tag in PUZZLE_TAG_TO_THEME}
     return [theme for theme in THEME_VOCAB if theme in wanted]
+
+
+# --------------------------------------------------------------------------------------
+# Tag groups: what a per-move detector can and cannot be held to
+# --------------------------------------------------------------------------------------
+# The measured benchmark (PROGRESS §19) splits cleanly along this line, so it is made
+# explicit here instead of being rediscovered in every discussion of the numbers.
+
+#: Tags whose truth is a property of a single position and its move -- "this move forks",
+#: "this move promotes". A per-move rule can, in principle, decide these exactly, and the
+#: detectors score F1 0.5-1.0 on them.
+MOVE_LEVEL_TAGS: tuple[str, ...] = (
+    "advancedPawn",
+    "attackingF2F7",
+    "backRankMate",
+    "deflection",
+    "discoveredAttack",
+    "doubleCheck",
+    "enPassant",
+    "fork",
+    "hangingPiece",
+    "interference",
+    "overloading",
+    "pin",
+    "promotion",
+    "sacrifice",
+    "skewer",
+    "smotheredMate",
+    "trappedPiece",
+    "underPromotion",
+    "xRayAttack",
+)
+
+#: Tags that describe the *puzzle*, not the move -- "this is a kingside attack", "the point is
+#: a quiet move", "the opponent is in zugzwang". They hold of the whole solution, so a
+#: per-move rule is structurally mismatched to them however it is tuned. They are kept in the
+#: label space and reported separately rather than deleted, so the measurement says so out
+#: loud instead of the aggregate quietly being dragged down by them.
+PUZZLE_LEVEL_TAGS: tuple[str, ...] = (
+    "attraction",
+    "capturingDefender",
+    "clearance",
+    "defensiveMove",
+    "intermezzo",
+    "kingsideAttack",
+    "queensideAttack",
+    "quietMove",
+    "zugzwang",
+)
+
+_TAG_GROUP: dict[str, str] = {
+    **{tag: "move" for tag in MOVE_LEVEL_TAGS},
+    **{tag: "puzzle" for tag in PUZZLE_LEVEL_TAGS},
+}
+
+#: Themes (what the benchmark compares) in each group, derived from the tag groups.
+MOVE_LEVEL_THEMES: frozenset[str] = frozenset(PUZZLE_TAG_TO_THEME[tag] for tag in MOVE_LEVEL_TAGS)
+PUZZLE_LEVEL_THEMES: frozenset[str] = frozenset(
+    PUZZLE_TAG_TO_THEME[tag] for tag in PUZZLE_LEVEL_TAGS
+)
+
+
+def tag_group(tag: str) -> str | None:
+    """``"move"`` or ``"puzzle"`` for a mapped Lichess tag; ``None`` if it is not mapped."""
+    return _TAG_GROUP.get(tag)
+
+
+def theme_group(theme: str) -> str | None:
+    """``"move"`` or ``"puzzle"`` for a theme the mapping covers; ``None`` otherwise."""
+    if theme in MOVE_LEVEL_THEMES:
+        return "move"
+    if theme in PUZZLE_LEVEL_THEMES:
+        return "puzzle"
+    return None

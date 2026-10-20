@@ -36,7 +36,7 @@ from moveexp.analysis.themes import register_all  # noqa: E402
 from moveexp.analysis.themes.base import DetectionContext, run_all  # noqa: E402
 from moveexp.config import THEME_VOCAB  # noqa: E402
 from moveexp.data.lichess import Puzzle, reservoir_sample, stream_puzzles  # noqa: E402
-from moveexp.data.puzzle_themes import PUZZLE_TAG_TO_THEME  # noqa: E402
+from moveexp.data.puzzle_themes import PUZZLE_TAG_TO_THEME, theme_group  # noqa: E402
 
 #: The measurable themes, in vocabulary order (deterministic output).
 THEMES: tuple[str, ...] = tuple(
@@ -92,6 +92,7 @@ def evaluate(
         rows.append(
             {
                 "theme": theme,
+                "group": theme_group(theme) or "other",
                 "gold": c["gold"],
                 "detected": tp + fp,
                 "tp": tp,
@@ -105,6 +106,41 @@ def evaluate(
     return rows
 
 
+def group_scores(rows: Sequence[dict[str, float | int | str]]) -> dict[str, dict[str, float | int]]:
+    """Aggregate the per-theme counts into micro and macro scores per tag group.
+
+    Micro pools every ``(theme, puzzle)`` decision in the group, so it answers "how good are
+    these detectors overall"; macro is the mean of the per-theme F1, so it answers "how good is
+    the average detector". They disagree, and both are reported for that reason.
+    """
+    totals: dict[str, list[int]] = {}
+    f1s: dict[str, list[float]] = {}
+    for row in rows:
+        group = str(row["group"])
+        acc = totals.setdefault(group, [0, 0, 0])
+        acc[0] += int(row["tp"])
+        acc[1] += int(row["fp"])
+        acc[2] += int(row["fn"])
+        f1s.setdefault(group, []).append(float(row["f1"]))
+
+    scores: dict[str, dict[str, float | int]] = {}
+    for group, (tp, fp, fn) in sorted(totals.items()):
+        precision = tp / (tp + fp) if tp + fp else 0.0
+        recall = tp / (tp + fn) if tp + fn else 0.0
+        micro = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+        scores[group] = {
+            "themes": len(f1s[group]),
+            "tp": tp,
+            "fp": fp,
+            "fn": fn,
+            "micro_precision": round(precision, 4),
+            "micro_recall": round(recall, 4),
+            "micro_f1": round(micro, 4),
+            "macro_f1": round(sum(f1s[group]) / len(f1s[group]), 4),
+        }
+    return scores
+
+
 def _write_csv(rows: Sequence[dict[str, float | int | str]], out: Path) -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
     with out.open("w", newline="", encoding="utf-8") as handle:
@@ -114,12 +150,28 @@ def _write_csv(rows: Sequence[dict[str, float | int | str]], out: Path) -> None:
 
 
 def _print_table(rows: Sequence[dict[str, float | int | str]]) -> None:
-    ranked = sorted(rows, key=lambda r: (r["f1"], r["gold"]), reverse=True)
-    print(f"{'theme':<22} {'gold':>7} {'det':>7} {'P':>6} {'R':>6} {'F1':>6}")
-    for row in ranked:
+    """Print the per-theme table, grouped by move-level / puzzle-level."""
+    for group in ("move", "puzzle", "other"):
+        group_rows = [row for row in rows if row["group"] == group]
+        if not group_rows:
+            continue
+        print(f"\n=== {group}-level themes ===")
+        print(f"{'theme':<22} {'gold':>7} {'det':>7} {'P':>6} {'R':>6} {'F1':>6}")
+        for row in sorted(group_rows, key=lambda r: (r["f1"], r["gold"]), reverse=True):
+            print(
+                f"{row['theme']:<22} {row['gold']:>7} {row['detected']:>7} "
+                f"{row['precision']:>6.2f} {row['recall']:>6.2f} {row['f1']:>6.2f}"
+            )
+
+
+def _print_group_summary(rows: Sequence[dict[str, float | int | str]]) -> None:
+    """Print the micro/macro scores per group -- the headline the per-theme table hides."""
+    print("\n=== group summary ===")
+    print(f"{'group':<8} {'themes':>6} {'P':>7} {'R':>7} {'microF1':>8} {'macroF1':>8}")
+    for group, score in group_scores(rows).items():
         print(
-            f"{row['theme']:<22} {row['gold']:>7} {row['detected']:>7} "
-            f"{row['precision']:>6.2f} {row['recall']:>6.2f} {row['f1']:>6.2f}"
+            f"{group:<8} {score['themes']:>6} {score['micro_precision']:>7.3f} "
+            f"{score['micro_recall']:>7.3f} {score['micro_f1']:>8.3f} {score['macro_f1']:>8.3f}"
         )
 
 
@@ -141,6 +193,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     rows = evaluate(puzzles, themes)
     _write_csv(rows, args.out)
     _print_table(rows)
+    _print_group_summary(rows)
     gold_total = sum(row["gold"] for row in rows if row["theme"] in themes)
     print(f"\nevaluated {len(puzzles)} puzzles ({gold_total} tagged tactics); wrote {args.out}")
     return 0

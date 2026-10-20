@@ -15,6 +15,23 @@ benchmark (`eval/puzzle_benchmark.py`) and the concept classifier a real, tagged
 [docs/DATASETS.md](docs/DATASETS.md) for the corpora surveyed, and [Roadmap](#roadmap) for
 what is next.
 
+### Measured, not asserted
+
+The labels are now external to the code: the detectors are benchmarked against Lichess puzzle
+tags, and the concept classifier is trained on them.
+
+| what | result |
+| --- | --- |
+| Detector benchmark, 20k puzzles, move-level motifs | `promotion`, `en_passant`, `smothered_mate`, `double_check` F1 ≈ 1.00; `advanced_pawn` 0.75; `fork` 0.50 |
+| Detector benchmark, puzzle-level tags | ≈ 0 — the tag marks the *point* of a puzzle, not a motif a per-move rule can decide |
+| Concept classifier, 300k rows | micro F1 0.412 / macro F1 0.374 under per-tag thresholds, against a top-5 baseline of 0.221 / 0.046 |
+
+The data-and-concepts loop (PROGRESS §20–24) tried four levers — symmetry augmentation, a
+cosine LR schedule, 2.5× more data, and tighter detector definitions. **None moved macro F1
+beyond noise.** The binding constraint is the label space, not the training loop: that is the
+loop's main finding, and it was measured rather than assumed. The training/detector numbers,
+including the negative results, are in `PROGRESS.md`.
+
 ---
 
 ## Quick start
@@ -81,7 +98,7 @@ src/moveexp/
   model/               board encoder, dataset assembly, tiny CNN, and the shared metrics
   data/                Lichess download + streaming .zst readers + the puzzle tag mapping
   cli.py               analyze-move / analyze-pgn / batch / explain / vocab
-tests/                 389 tests; engine tests are marked `engine` and skip without Stockfish
+tests/                 402 tests; engine tests are marked `engine` and skip without Stockfish
 eval/puzzle_benchmark.py   detector precision/recall vs Lichess puzzle tags
 scripts/download_data.py   resumable download of the Lichess puzzle export
 scripts/build_puzzle_dataset.py  puzzles -> the tagged concept Parquet
@@ -232,11 +249,12 @@ rules and takes `sacrifice_confirmed`, which the bulk labeller passes as `False`
 | M2 ✅ | symbolic layer: SEE, theme detectors (tactics/material/king-safety/structure/activity), positional features, intent rules, `pipeline.py`, `analyze-pgn`/`batch` CLI |
 | M3 ✅ | explanation layer (`explain/`) and the self-contained demo (`demo/`) |
 | M4 ✅ | data acquisition: resumable download + streaming `.zst` readers; **puzzle** benchmark against Lichess tags |
-| M5 ✅ | puzzle-tag tactic detectors (line-aware motifs included) + the versions bumped to `v2` |
-| M6 ✅ | concept dataset from the puzzle tags + the concept classifier (`train_concepts.py`) |
-| M7 | real games -> a move-quality corpus (rating bands, opening skip, flagged share) |
+| M5 ✅ | puzzle-tag tactic detectors (line-aware motifs included); `x_ray`/`interference`/`hanging_piece` rewritten to be move-linked, and pinned by a fixture guard |
+| M6 ✅ | concept dataset (dedupe, rating bands, tag groups) + the concept classifier with per-tag thresholds and a top-k baseline |
+| M7 | real games -> a move-quality corpus (rating bands, opening skip, flagged share); needs an engine |
 | M8 | the Lichess evaluation DB as an engine-free labelling source |
 | M9 | the LLM/constrained explanation layer, checked against the symbolic reports |
+| M10 | a label space that a per-move model can actually predict — the loop's main open question |
 
 ## Licence / attribution
 

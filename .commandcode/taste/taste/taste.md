@@ -19,6 +19,7 @@
 - Scopes work to fit the available token/usage budget (e.g. a Command Code 5-hour window) rather than the full ideal project, and expects the agent to pick a scope it can comfortably finish in that budget. Confidence: 0.7
 - Expects the agent to propose a scope/plan and wait for explicit approval before kicking off a large autonomous run ("as told, dont do anything yet"). Confidence: 0.6
 - Wants to drive long unattended overnight work with Command Code's `/loop` feature (self-paced loop that stops once the task is done), prefers the standing task written to `.commandcode/loop.md` so a bare `/loop` picks it up, and asks for concrete usage instructions. Confidence: 0.6
+- Wants a `/loop` backlog drained as fast as possible: schedule the next check at the shortest allowed delay (e.g. 60s floor) rather than backing off to minutes — "5 mins is too long" between iterations. Confidence: 0.7
 - When asking for an explanation, wants a full end-to-end walkthrough — what the project does, how it works (layer-by-layer pipeline), and exactly how to demo it with commands — rather than a narrow answer. Confidence: 0.5
 - Prefers a plain, technically-dense writing register — "senior open source contributor" tone, no marketing, no flowery AI language — for written deliverables, which should read like a proper research paper. Confidence: 0.85
 - When reproducing or adapting an existing document/template, expects the exact format, structure and section numbering to be preserved — "do not stray from the format given". Confidence: 0.8
@@ -28,4 +29,7 @@
 - Wants the demo to expose the working process, not just results: an image/visual gallery showing how it was trained and how it works (loss curves, label distributions, per-head metrics, pipeline walkthrough), since a model's behaviour is otherwise not visible. Confidence: 0.6
 - Wants demos launched with zero typing in front of an audience: a single command with no arguments, ideally one double-clickable file at the repo root (e.g. run_demo.cmd), with any inputs defaulted to a built-in showcase so nothing has to be typed live. Confidence: 0.75
 - Prefers training and evaluation data drawn from real, externally-curated public datasets (with independent ground-truth labels) over the project's own generated/self-play data, so that results measure correctness against something the project did not produce. Confidence: 0.7
+- When a dataset is the bottleneck, expects the agent to search for and survey the available public options (sizes, licences, schemas) and document the comparison and recommendation before committing to one. Confidence: 0.75
+n before committing to one. Confidence: 0.6
+
 - When a dataset is the bottleneck, expects the agent to search for and survey the available public options (sizes, licences, schemas) and document the comparison and recommendation before committing to one. Confidence: 0.6

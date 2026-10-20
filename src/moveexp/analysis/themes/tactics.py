@@ -240,12 +240,28 @@ def detect_skewer(ctx: DetectionContext) -> ThemeHit | None:
     return None
 
 
+def _opens_ray(ctx: DetectionContext, slider: chess.Square, through: chess.Square) -> bool:
+    """Did *this move* put ``slider`` on the line, or vacate a square along it?
+
+    Without this the x-ray rule reports every pre-existing x-ray anywhere on the board on every
+    move, which is why it scored F1 0.00 against the puzzle tags: the motif is a property of the
+    move, not of the position.
+    """
+    if slider == ctx.to_square:
+        return True
+    return bool(chess.BB_SQUARES[ctx.from_square] & chess.between(slider, through))
+
+
 @detector
 def detect_x_ray(ctx: DetectionContext) -> ThemeHit | None:
     """A slider sees a valuable piece *behind* a weaker one -- the mirror image of a skewer.
 
     Here the rear piece is the valuable one, so the front piece is worth giving up to get at
     it. Between this and :func:`detect_skewer`, both alignments of a two-piece ray are covered.
+
+    The ray has to be *created by this move* -- either the moved piece is the slider, or the
+    move vacated a square on the line. A pre-existing x-ray is somebody else's move, not this
+    one's, and counting it made the detector useless (P 0.002 on the corpus before this change).
     """
     for square, piece_type in _our_sliders(ctx.after, ctx.side):
         for front, back in _two_piece_rays(ctx.after, square, piece_type):
@@ -255,18 +271,21 @@ def detect_x_ray(ctx: DetectionContext) -> ThemeHit | None:
             if back_piece.color == ctx.side:
                 continue
             front_value, back_value = piece_value(front_piece), piece_value(back_piece)
-            if back_value >= FORK_MIN_TARGET_CP and back_value > front_value:
-                return ThemeHit(
-                    theme="x_ray",
-                    confidence=0.6,
-                    squares=ctx.squares(square, front, back),
-                    pieces=ctx.pieces(ctx.after, square),
-                    evidence=(
-                        f"{ctx.pieces(ctx.after, square)[0]} sees through "
-                        f"{ctx.pieces(ctx.after, front)[0]} to the valuable "
-                        f"{ctx.pieces(ctx.after, back)[0]} behind it"
-                    ),
-                )
+            if back_value < FORK_MIN_TARGET_CP or back_value <= front_value:
+                continue
+            if not _opens_ray(ctx, square, back):
+                continue
+            return ThemeHit(
+                theme="x_ray",
+                confidence=0.6,
+                squares=ctx.squares(square, front, back),
+                pieces=ctx.pieces(ctx.after, square),
+                evidence=(
+                    f"{ctx.pieces(ctx.after, square)[0]} sees through "
+                    f"{ctx.pieces(ctx.after, front)[0]} to the valuable "
+                    f"{ctx.pieces(ctx.after, back)[0]} behind it"
+                ),
+            )
     return None
 
 
@@ -345,7 +364,12 @@ def detect_double_check(ctx: DetectionContext) -> ThemeHit | None:
 
 @detector
 def detect_hanging_piece(ctx: DetectionContext) -> ThemeHit | None:
-    """The move leaves a worthwhile enemy piece attackable with a material gain."""
+    """The move leaves a worthwhile enemy piece attackable with a material gain.
+
+    "Hanging" is taken literally: the piece must have **no defender at all**. Counting merely
+    out-numbered pieces (attackers > defenders) made this fire on a large part of every corpus
+    (F1 0.05) because a defended piece under two attackers is not what the tag means.
+    """
     best: chess.Square | None = None
     for sq in _enemy_pieces(ctx.after, ctx.side):
         if piece_value(ctx.after.piece_at(sq)) < HANGING_MIN_PIECE_CP:
@@ -353,6 +377,8 @@ def detect_hanging_piece(ctx: DetectionContext) -> ThemeHit | None:
         gain = net_attackers(ctx.after, sq, ctx.side)
         if gain < HANGING_PIECE_MIN_NET_ATTACKERS:
             continue
+        if occupied_attackers(ctx.after, sq, ctx.opponent):
+            continue  # defended: under pressure, but not hanging
         # Only report what *this* move exposed: either the moved piece attacks it, or the move
         # added an attacker. A piece that was already loose is somebody else's mistake.
         is_new = sq in ctx.after.attacks(ctx.to_square) or gain > net_attackers(
@@ -370,8 +396,8 @@ def detect_hanging_piece(ctx: DetectionContext) -> ThemeHit | None:
         squares=ctx.squares(best),
         pieces=ctx.pieces(ctx.after, best),
         evidence=(
-            f"{ctx.pieces(ctx.after, best)[0]} is left hanging "
-            f"({net_attackers(ctx.after, best, ctx.side)} attackers against its defenders)"
+            f"{ctx.pieces(ctx.after, best)[0]} is left hanging, undefended and attacked "
+            f"{net_attackers(ctx.after, best, ctx.side)} time(s)"
         ),
     )
 
@@ -557,6 +583,11 @@ def detect_interference(ctx: DetectionContext) -> ThemeHit | None:
     Checked by comparing the same ray in both positions: if the first thing the slider met
     before the move was one of our pieces and the first thing it meets now is the piece we just
     moved, then our move is exactly what interposed.
+
+    The shielded piece must also have been **genuinely threatened** before the move (or be the
+    king, i.e. the move blocks a check). Requiring only "the move landed on the line" made this
+    fire on a large share of all moves -- landing on some enemy slider's path by accident is
+    common -- and it scored F1 0.002 on the corpus.
     """
     blocker = ctx.after.piece_at(ctx.to_square)
     if blocker is None or blocker.color != ctx.side:
@@ -572,6 +603,11 @@ def detect_interference(ctx: DetectionContext) -> ThemeHit | None:
             target = ctx.board.piece_at(first_before)
             if target is None or target.color != ctx.side:
                 continue  # the slider was aiming at empty space, not at a capture
+            if target.piece_type != chess.KING and (
+                net_attackers(ctx.board, first_before, ctx.opponent)
+                < HANGING_PIECE_MIN_NET_ATTACKERS
+            ):
+                continue  # nothing was actually threatened, so the block accomplishes nothing
             return ThemeHit(
                 theme="interference",
                 confidence=0.7,

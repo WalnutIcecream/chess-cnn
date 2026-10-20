@@ -79,14 +79,23 @@ def test_no_skewer_when_front_is_cheaper():
 
 
 # -------------------------------------------------------------------------------- x-ray
-def test_x_ray_cheap_front_valuable_behind():
-    b = board("wR@a1", "bR@a4", "bQ@a8", "wK@e1", "bK@e8")
-    assert detect_x_ray(_ctx(b, "Kf1")).theme == "x_ray"
+def test_x_ray_when_the_move_creates_the_ray():
+    # The rook arrives on the a-file, where the enemy rook screens the queen behind it.
+    b = board("wR@h1", "bR@a4", "bQ@a8", "wK@e2", "bK@e8")
+    assert detect_x_ray(_ctx(b, "Ra1")).theme == "x_ray"
 
 
-def test_no_x_ray_when_front_is_more_valuable():
-    b = board("wR@a1", "bQ@a4", "bR@a8", "wK@e1", "bK@e8")
+def test_no_x_ray_for_a_ray_that_already_existed():
+    # The x-ray is on the board before the move; it is not this move's doing, so it is not
+    # this move's x-ray.
+    b = board("wR@a1", "bR@a4", "bQ@a8", "wK@e2", "bK@e8")
     assert detect_x_ray(_ctx(b, "Kf1")) is None
+
+
+def test_no_x_ray_when_the_front_piece_is_the_more_valuable_one():
+    # Queen in front, rook behind: that ordering is a skewer's business, not an x-ray's.
+    b = board("wR@h1", "bQ@a4", "bR@a8", "wK@e2", "bK@e8")
+    assert detect_x_ray(_ctx(b, "Ra1")) is None
 
 
 # --------------------------------------------------------------------- discovered attack

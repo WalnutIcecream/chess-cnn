@@ -1,0 +1,7 @@
+variant,augment,schedule,head,metric,model_global,model_per_tag,all_off,topk_baseline,topk_k
+with_move,0,none,theme,micro_f1,0.4489,0.4105,0.0000,0.2201,3
+with_move,0,none,theme,macro_f1,0.3212,0.3700,0.0000,0.0308,3
+with_move,1,none,theme,micro_f1,0.4167,0.3985,0.0000,0.2201,3
+with_move,1,none,theme,macro_f1,0.3059,0.3427,0.0000,0.0308,3
+with_move,1,cosine,theme,micro_f1,0.3870,0.3127,0.0000,0.2201,3
+with_move,1,cosine,theme,macro_f1,0.2493,0.2894,0.0000,0.0308,3
